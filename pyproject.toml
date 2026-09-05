@@ -1,0 +1,95 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "blackmirror"
+version = "0.1.0"
+description = "In-silico neural content experimentation platform. Phase 1: predicted cortical response inference."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Junaid Abdul Hamid" }]
+
+# TRIBE v2 requires >=3.11. We target 3.12 (satisfies tribev2 >=3.11 and neuralset >=3.10).
+requires-python = ">=3.11,<3.13"
+
+# Phase 1 core only. Deliberately excludes torch/transformers/tribev2: the core
+# contract (schemas, validation, artifact store, service, CLI) must be importable
+# and testable without any ML stack installed. See docs/architecture.md.
+dependencies = [
+    "pydantic>=2.7",
+    "pydantic-settings>=2.2",
+    "numpy>=1.26",
+    "pandas>=2.2",
+    "pyarrow>=17.0",
+    "typer>=0.12",
+    "rich>=13.7",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+# Local multimodal analysis. Kept optional so the Phase 1 contract layer stays
+# lightweight and importable without model runtimes.
+content = [
+    "opencv-python-headless>=4.10",
+    "scenedetect>=0.6.7",
+    "rapidocr-onnxruntime>=1.4",
+    "sentence-transformers>=3.0",
+    "scipy>=1.13",
+]
+# Diagnostics + cortical mesh export. Independent of TRIBE.
+viz = [
+    "matplotlib>=3.8",
+    "nilearn>=0.11",
+    "nibabel>=5.1",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "pandas-stubs",
+]
+
+# NOTE: the TRIBE v2 model itself is NOT declared here.
+# It is CC-BY-NC-4.0 licensed, installs from git, and pins torch<2.7 / numpy==2.2.6,
+# which would make `pip install -e .` heavy and fragile for contributors who only
+# touch the contract layer. Install it explicitly:
+#
+#   uv pip install "tribev2[plotting] @ git+https://github.com/facebookresearch/tribev2.git"
+#   uv pip install whisperx            # required by ExtractWordsFromAudio, not declared upstream
+#
+# See docs/tribe_integration.md.
+
+[project.scripts]
+blackmirror = "blackmirror.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/junaid/BlackMirror"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/blackmirror"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Integration tests need the 709 MB checkpoint, gated Llama access and hours of
+# compute. They are opt-in only: `pytest -m tribe_integration`.
+addopts = "-m 'not tribe_integration'"
+markers = [
+    "tribe_integration: requires a real TRIBE v2 checkpoint and model dependencies (opt-in)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["B008"]  # typer uses function calls in argument defaults
+
+[tool.mypy]
+python_version = "3.11"
+warn_unused_ignores = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+files = ["src/blackmirror"]

@@ -1,0 +1,41 @@
+@import "tailwindcss";
+
+:root {
+  --background: #07090d;
+  --foreground: #e6eaf2;
+}
+
+html,
+body {
+  background: var(--background);
+  color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  font-family:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    sans-serif;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+/* Subtle depth behind the content, kept far from the WebGL canvas so it never
+   competes with the data colours. */
+.app-shell {
+  background:
+    radial-gradient(900px 500px at 12% -10%, rgba(56, 189, 248, 0.05), transparent 60%),
+    radial-gradient(700px 400px at 88% 0%, rgba(129, 140, 248, 0.045), transparent 55%),
+    var(--background);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}

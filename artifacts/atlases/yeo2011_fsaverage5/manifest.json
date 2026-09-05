@@ -1,0 +1,29 @@
+{
+  "name": "Yeo 2011 7 Networks",
+  "version": "Yeo2011_7Networks_N1000 (reference archive, 2011-07-19)",
+  "surface_space": "fsaverage5",
+  "source_url": "https://www.freesurfer.net/pub/data/Yeo_JNeurophysiol11_FreeSurfer.zip",
+  "source_page": "https://surfer.nmr.mgh.harvard.edu/fswiki/CorticalParcellation_Yeo2011",
+  "archive_sha256": "75e4ba37df6bdd7a87e17830b1640c0f07bef764852e74e6eb20d7e577cac027",
+  "license": "MIT",
+  "license_source": "https://nilearn.github.io/dev/modules/description/yeo_2011.html#license",
+  "license_text": "https://github.com/ThomasYeoLab/CBIG/blob/master/LICENSE.md",
+  "reference": "Yeo et al., Journal of Neurophysiology 106:1125-1165 (2011), doi:10.1152/jn.00338.2011",
+  "network_names": ["7Networks_1", "7Networks_2", "7Networks_3", "7Networks_4", "7Networks_5", "7Networks_6", "7Networks_7"],
+  "hemisphere_order": ["left", "right"],
+  "files": {
+    "LICENSE.txt": "269e809043283fa1f8881b0b731cbc949aab87554f282d5fd87bd1737cf5d95a",
+    "label/lh.Yeo2011_7Networks_N1000.annot": "4d2ea20fa33afa722d35884d27b3577486d8d7e15520d7d23efdd84956139190",
+    "label/rh.Yeo2011_7Networks_N1000.annot": "53fa768b6c33a3bc8fb5b147d18049684514fcd07e2cbacceeca17cfc21d9e9b",
+    "surf/lh.pial": "d3e772b74f39ed7a979d78dab5b98d1fe5916f1354b52d05c23b85a8080b72bd",
+    "surf/rh.pial": "64440462e8d1cec650d100c0fb16cb4704937e19e0bc42f58997a6a09e5e536b"
+  },
+  "verification": {
+    "vertices_per_hemisphere": 10242,
+    "pial_coordinate_max_delta": 0.0,
+    "pial_coordinates_exact_float32_match": true,
+    "medial_wall_left": 888,
+    "medial_wall_right": 881,
+    "medial_wall_exactly_matches_phase2_mask": true
+  }
+}

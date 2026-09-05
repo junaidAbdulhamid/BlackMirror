@@ -216,3 +216,39 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ---------------------------------------------------------------------------
+# BlackMirror
+# ---------------------------------------------------------------------------
+
+# Local secrets (HF token etc). Only .env.example is committed.
+.env
+
+# TRIBE v2 feature cache (exca TaskInfra) — large intermediate tensors.
+cache/
+
+# Model checkpoints — 709 MB+, fetched from HuggingFace, never committed.
+*.ckpt
+*.safetensors
+models/
+
+# Inference outputs. Run directories hold prediction matrices (tens of MB each).
+artifacts/runs/
+artifacts/index.jsonl
+artifacts/benchmarks/
+artifacts/comparisons/
+# The exported fsaverage5 cortical mesh is derived data (regenerate with
+# `blackmirror export-mesh`); it is small but reproducible, so keep it out.
+artifacts/mesh/
+
+# Uploaded / downloaded stimulus media.
+examples/media/
+
+# Ground-truth capture from the Colab reference run lands here before curation.
+notebooks/outputs/
+
+# Isolated diarization environment (pyannote cannot share TRIBE torch/numpy pins).
+.venv-diarization/
+
+# Local browser/tool session markers.
+*.ses
