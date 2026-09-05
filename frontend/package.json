@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e:comparison": "node scripts/benchmark-comparison-browser.mjs",
-    "verify": "npm run typecheck && npm test && npm run test:e2e:comparison",
+    "test:e2e:scoring": "node scripts/validate-scoring-browser.mjs",
+    "verify": "npm run typecheck && npm test && npm run test:e2e:comparison && npm run test:e2e:scoring",
     "test:watch": "vitest"
   },
   "dependencies": {

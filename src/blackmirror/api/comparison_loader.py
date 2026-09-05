@@ -10,6 +10,9 @@ from blackmirror.api.loader import BinaryArray
 from blackmirror.comparison.pipeline import compare_runs
 from blackmirror.comparison.schemas import NeuralComparisonResult
 from blackmirror.comparison.storage import ComparisonStore, resolve_artifact_path
+from blackmirror.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class ComparisonLoader:
@@ -37,13 +40,23 @@ class ComparisonLoader:
         )
 
     def list_comparisons(self) -> list[NeuralComparisonResult]:
+        """Every readable comparison, newest first.
+
+        An unreadable directory is skipped rather than raised: a single
+        truncated or partially written metadata.json would otherwise make the
+        entire listing 500, hiding every healthy comparison alongside it. The
+        run index takes the same approach to corrupt lines.
+        """
         if not self.store.root.exists():
             return []
         results: list[NeuralComparisonResult] = []
         for directory in sorted(self.store.root.iterdir(), reverse=True):
             if not directory.is_dir() or not (directory / "metadata.json").exists():
                 continue
-            results.append(self.store.read(directory.name))
+            try:
+                results.append(self.store.read(directory.name))
+            except (ValueError, OSError) as exc:
+                logger.warning("Skipping unreadable comparison %s: %s", directory.name, exc)
         return results
 
     def array(self, comparison_id: str, candidate_run_id: str, key: str) -> BinaryArray:

@@ -46,8 +46,13 @@ also exclude the medial wall. The fsaverage5 benchmark script is
 The atlas answers *where*. Metrics quantify predicted response and change.
 Neither supplies causal or psychological interpretation. The implementation
 does not contain emotion, engagement, memory, purchase-intent, or attention
-scores. Functional-network aggregation is intentionally deferred until a
-network atlas is independently verified in the exact surface order.
+scores. Functional-network aggregation was deferred until a network atlas could
+be independently verified in the exact surface order; that verification now
+exists in Phase 5 (`blackmirror.comparison.network`), which checks the Yeo 2011
+files against a pinned manifest checksum, requires the atlas source surface
+coordinates to equal this project's mesh exactly, and requires its medial wall
+to match the project mask before any aggregation is permitted. Phase 3 itself
+still emits no network series; the mapping is applied at comparison time.
 
 Phase 4 may consume stimulus-aligned timestamps, ranked mathematical events,
 ROI series, and global/change series to align content events. It must preserve

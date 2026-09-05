@@ -53,7 +53,7 @@ export function ComparisonView({ comparisonId }: { comparisonId: string }) {
     setTimes(null);
     setError(null);
     Promise.all([
-      fetchComparisonArray(comparisonId, candidateId, "cortical_l2_difference", controller.signal),
+      fetchComparisonArray(comparisonId, candidateId, "cortical_rms_difference", controller.signal),
       fetchComparisonArray(comparisonId, candidateId, "times", controller.signal),
     ])
       .then(([values, observedTimes]) => {
@@ -139,7 +139,7 @@ export function ComparisonView({ comparisonId }: { comparisonId: string }) {
             <section className="mt-5 rounded-xl border border-white/[0.08] bg-white/[0.02] p-5">
               <h2 className="text-xs uppercase tracking-wider text-slate-400">Cortical pattern divergence</h2>
               <Sparkline values={l2} times={times} />
-              <p className="mt-2 text-[10px] text-slate-600">{pair.alignment.interpolation_applied ? `${pair.alignment.interpolated_candidate_samples} candidate samples were linearly interpolated without extrapolation.` : "L2 difference at matched observed timestamps. No samples were interpolated."}</p>
+              <p className="mt-2 text-[10px] text-slate-600">{pair.alignment.interpolation_applied ? `${pair.alignment.interpolated_candidate_samples} candidate samples were linearly interpolated without extrapolation.` : "RMS cortical difference at matched observed timestamps \u2014 the L2 normalised by the number of jointly finite vertices, so samples are comparable. No samples were interpolated."}</p>
             </section>
             {dataset && difference && times && (
               <section className="mt-5 rounded-xl border border-white/[0.08] bg-white/[0.02] p-5">
@@ -156,7 +156,7 @@ export function ComparisonView({ comparisonId }: { comparisonId: string }) {
               </section>
               <section className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-5">
                 <h2 className="text-xs uppercase tracking-wider text-slate-400">Ranked divergence events</h2>
-                <div className="mt-3 space-y-2">{pair.events.slice(0, 12).map((event) => <div key={event.rank} className="flex justify-between text-xs"><span className="text-slate-400">#{event.rank} · {event.timestamp_seconds.toFixed(2)}s</span><span className="font-mono text-slate-200">L2 {event.cortical_l2_difference.toFixed(3)}</span></div>)}</div>
+                <div className="mt-3 space-y-2">{pair.events.slice(0, 12).map((event) => <div key={event.rank} className="flex justify-between text-xs"><span className="text-slate-400">#{event.rank} · {event.timestamp_seconds.toFixed(2)}s</span><span className="font-mono text-slate-200">RMS {event.cortical_rms_difference.toFixed(4)}</span></div>)}</div>
               </section>
             </div>
             <div className="mt-5 grid gap-5 lg:grid-cols-2">

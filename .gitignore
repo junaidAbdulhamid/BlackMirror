@@ -237,6 +237,7 @@ artifacts/runs/
 artifacts/index.jsonl
 artifacts/benchmarks/
 artifacts/comparisons/
+artifacts/experiments/
 # The exported fsaverage5 cortical mesh is derived data (regenerate with
 # `blackmirror export-mesh`); it is small but reproducible, so keep it out.
 artifacts/mesh/

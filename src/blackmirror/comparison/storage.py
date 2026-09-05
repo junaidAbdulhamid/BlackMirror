@@ -36,15 +36,27 @@ class ComparisonStore:
         temporary = Path(tempfile.mkdtemp(prefix=f".{result.comparison_id}.", dir=self.root))
         try:
             (temporary / "pairs").mkdir()
-            (temporary / "metadata.json").write_text(
-                result.model_dump_json(indent=2), encoding="utf-8"
-            )
+            # The manifest was written without an fsync while the arrays it
+            # describes were flushed. A crash between the two leaves a
+            # comparison directory whose metadata may be absent or truncated
+            # while its arrays are intact — the failure mode immutable
+            # artifacts exist to prevent.
+            metadata_path = temporary / "metadata.json"
+            with metadata_path.open("w", encoding="utf-8") as handle:
+                handle.write(result.model_dump_json(indent=2))
+                handle.flush()
+                os.fsync(handle.fileno())
             for candidate_id, arrays in pair_arrays.items():
                 with (temporary / "pairs" / f"{candidate_id}.npz").open("wb") as handle:
                     np.savez_compressed(handle, **arrays)  # type: ignore[arg-type]
                     handle.flush()
                     os.fsync(handle.fileno())
+            _fsync_directory(temporary / "pairs")
+            _fsync_directory(temporary)
             os.replace(temporary, destination)
+            # Without this the rename itself can be lost on power failure, and
+            # the comparison would vanish despite write() having returned.
+            _fsync_directory(self.root)
         except BaseException:
             shutil.rmtree(temporary, ignore_errors=True)
             raise
@@ -54,6 +66,20 @@ class ComparisonStore:
         validate_id(comparison_id, "comparison")
         path = self.root / comparison_id / "metadata.json"
         return NeuralComparisonResult.model_validate_json(path.read_text(encoding="utf-8"))
+
+
+def _fsync_directory(path: Path) -> None:
+    """Flush a directory entry, where the platform supports it."""
+    try:
+        descriptor = os.open(path, os.O_RDONLY)
+    except OSError:  # pragma: no cover - platform without directory fds
+        return
+    try:
+        os.fsync(descriptor)
+    except OSError:  # pragma: no cover - some filesystems refuse this
+        pass
+    finally:
+        os.close(descriptor)
 
 
 def validate_id(value: str, label: str) -> None:

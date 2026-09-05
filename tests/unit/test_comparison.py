@@ -40,8 +40,18 @@ def _prediction(run_id: str, stimulus_hash: str, *, fingerprint: str = "same") -
             vertex_count=4,
             hemisphere_order=("left", "right"),
             hemisphere_index_ranges={"left": (0, 2), "right": (2, 4)},
+            includes_subcortex=False,
+            medial_wall_handling="destrieux",
         ),
-        prediction=SimpleNamespace(semantics="predicted BOLD", units=None),
+        prediction=SimpleNamespace(
+            semantics="predicted BOLD", units=None, normalization=None
+        ),
+        temporal=SimpleNamespace(
+            tr_seconds=1.0,
+            output_is_stimulus_aligned=True,
+            hemodynamic_offset_seconds=5.0,
+            hemodynamic_offset_applied_to_raw=False,
+        ),
     )
 
 

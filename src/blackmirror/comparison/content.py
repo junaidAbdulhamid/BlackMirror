@@ -9,9 +9,21 @@ from numpy.typing import NDArray
 
 from blackmirror.comparison.alignment import align_observed_times
 
+#: Which availability mask governs each feature.
+#:
+#: This gate is load-bearing, not decorative. An unanalysed stream does not
+#: produce NaN — `build_feature_matrix` starts from zeros, so a run with no
+#: video reports `motion = 0.0`, which is finite. Without a gate the comparison
+#: would subtract 0.0 from 0.0 and report a real, measured difference of zero
+#: for content that was never looked at.
+#:
+#: Every feature must appear here; see `_require_complete_gates`.
 AVAILABILITY_FOR_PREFIX = {
     "motion": "visual_available",
+    "motion_structural": "visual_available",
+    "luminance_shift": "visual_available",
     "brightness": "visual_available",
+    "brightness_p90": "visual_available",
     "contrast": "visual_available",
     "saturation": "visual_available",
     "entropy": "visual_available",
@@ -26,6 +38,32 @@ AVAILABILITY_FOR_PREFIX = {
     "object_count": "content_event_available",
     "shot_change": "visual_available",
 }
+
+#: Columns that ARE the availability masks, and so gate themselves.
+AVAILABILITY_COLUMNS = frozenset(AVAILABILITY_FOR_PREFIX.values())
+
+
+def _require_complete_gates(names: tuple[str, ...]) -> None:
+    """Refuse to compare features whose availability is unknown.
+
+    A hand-maintained mapping silently goes stale the moment a feature is added
+    upstream, and the failure is invisible: the new column is simply compared
+    without a gate and an unanalysed stream reads as a measured zero. Measured
+    on this codebase, three features (`motion_structural`, `luminance_shift`,
+    `brightness_p90`) were added to Phase 4 and were ungated here. Failing loudly
+    is the only way this stays correct as features are added.
+    """
+    ungated = [
+        name
+        for name in names
+        if name not in AVAILABILITY_FOR_PREFIX and name not in AVAILABILITY_COLUMNS
+    ]
+    if ungated:
+        raise ValueError(
+            "content feature(s) have no availability gate and cannot be compared "
+            f"safely: {', '.join(sorted(ungated))}. Add them to "
+            "AVAILABILITY_FOR_PREFIX in blackmirror.comparison.content."
+        )
 
 
 @dataclass(frozen=True)
@@ -68,6 +106,7 @@ def compare_content_features(
     names = reference.feature_names
     if not names or len(set(names)) != len(names):
         raise ValueError("content feature names must be nonempty and unique")
+    _require_complete_gates(names)
     for label, variant in (("reference", reference), ("candidate", candidate)):
         if np.asarray(variant.matrix).shape != (len(variant.times), len(names)):
             raise ValueError(f"{label} content matrix shape does not match its contract")

@@ -218,6 +218,13 @@ class NeuralComparisonEngine:
             raise ValueError("an aligned row has no jointly finite cortical values")
         clean_delta = np.where(jointly_finite, cortical_delta, 0.0)
         cortical_l2 = np.linalg.norm(clean_delta, axis=1)
+        # Raw L2 grows with the number of usable vertices, so it is not
+        # comparable between rows whose finite counts differ -- and rows CAN
+        # differ, because Phase 1 preserves non-finite predictions rather than
+        # dropping them. Normalising by sqrt(count) gives a per-vertex magnitude
+        # that ranks divergence instead of ranking data availability.
+        finite_counts = jointly_finite.sum(axis=1)
+        cortical_rms = cortical_l2 / np.sqrt(finite_counts)
         cortical_mean_delta = np.divide(
             clean_delta.sum(axis=1), jointly_finite.sum(axis=1), dtype=np.float64
         )
@@ -232,8 +239,10 @@ class NeuralComparisonEngine:
         network_summaries = self._network_summaries(
             network_delta, aligned.times, reference.network_names
         )
-        events = self._rank_events(cortical_l2, cosine, roi_delta, aligned.times)
-        windows = self._rank_windows(events, cortical_l2, aligned.times)
+        events = self._rank_events(
+            cortical_l2, cortical_rms, finite_counts, cosine, roi_delta, aligned.times
+        )
+        windows = self._rank_windows(events, cortical_l2, cortical_rms, aligned.times)
         arrays: dict[str, NDArray[np.generic]] = {
             "times": aligned.times,
             "reference_row_indices": aligned.reference_indices,
@@ -247,6 +256,8 @@ class NeuralComparisonEngine:
             "global_mean_signed_delta": cortical_mean_delta,
             "global_mean_absolute_delta": cortical_mean_absolute_delta,
             "cortical_l2_difference": cortical_l2,
+            "cortical_rms_difference": cortical_rms,
+            "jointly_finite_vertex_count": finite_counts,
             "cortical_cosine_similarity": cosine,
             **{
                 f"hemisphere_{name}_mean_signed_delta": values
@@ -386,15 +397,20 @@ class NeuralComparisonEngine:
     def _rank_events(
         self,
         l2: NDArray[np.float64],
+        rms: NDArray[np.float64],
+        finite_counts: NDArray[np.int64],
         cosine: NDArray[np.float64],
         roi_delta: NDArray[np.float64],
         times: NDArray[np.float64],
     ) -> tuple[DivergenceEvent, ...]:
-        order = np.argsort(l2)[::-1]
+        # Stable sort on the negated key: ties then break by ascending index
+        # rather than by whatever order an unstable sort produced, so a rerun of
+        # the same comparison ranks identically.
+        order = np.argsort(-rms, kind="stable")
         events: list[DivergenceEvent] = []
         selected: list[int] = []
         for index in order:
-            if not np.isfinite(l2[index]) or l2[index] <= 0:
+            if not np.isfinite(rms[index]) or rms[index] <= 0:
                 continue
             too_close = any(
                 abs(int(index) - previous) <= 2 * self.window_radius_samples
@@ -403,15 +419,19 @@ class NeuralComparisonEngine:
             if too_close:
                 continue
             finite_regions = np.flatnonzero(np.isfinite(roi_delta[index]))
-            top = finite_regions[np.argsort(np.abs(roi_delta[index, finite_regions]))[::-1]]
+            top = finite_regions[
+                np.argsort(-np.abs(roi_delta[index, finite_regions]), kind="stable")
+            ]
             rank = len(events) + 1
             events.append(
                 DivergenceEvent(
                     rank=rank,
                     aligned_index=int(index),
                     timestamp_seconds=float(times[index]),
-                    score=float(l2[index]),
+                    score=float(rms[index]),
                     cortical_l2_difference=float(l2[index]),
+                    cortical_rms_difference=float(rms[index]),
+                    finite_vertex_count=int(finite_counts[index]),
                     cortical_cosine_similarity=(
                         float(cosine[index]) if np.isfinite(cosine[index]) else None
                     ),
@@ -427,6 +447,7 @@ class NeuralComparisonEngine:
         self,
         events: tuple[DivergenceEvent, ...],
         l2: NDArray[np.float64],
+        rms: NDArray[np.float64],
         times: NDArray[np.float64],
     ) -> tuple[DivergenceWindow, ...]:
         candidates: list[tuple[int, int]] = []
@@ -439,7 +460,11 @@ class NeuralComparisonEngine:
         windows: list[DivergenceWindow] = []
         for start, end in candidates:
             values = l2[start:end]
-            peak_local = int(np.argmax(values))
+            normalised = rms[start:end]
+            # The peak is located on the normalised series for the same reason
+            # the ranking uses it: raw L2 would pick whichever sample had the
+            # most finite vertices.
+            peak_local = int(np.argmax(normalised))
             windows.append(
                 DivergenceWindow(
                     rank=1,
@@ -448,10 +473,12 @@ class NeuralComparisonEngine:
                     observed_samples=end - start,
                     mean_l2_difference=float(values.mean()),
                     peak_l2_difference=float(values[peak_local]),
+                    mean_rms_difference=float(normalised.mean()),
+                    peak_rms_difference=float(normalised[peak_local]),
                     peak_time_seconds=float(times[start + peak_local]),
                 )
             )
-        windows.sort(key=lambda item: item.mean_l2_difference, reverse=True)
+        windows.sort(key=lambda item: (-item.mean_rms_difference, item.start_time_seconds))
         return tuple(item.model_copy(update={"rank": rank}) for rank, item in enumerate(windows, 1))
 
 
@@ -478,7 +505,19 @@ def _hemisphere_mean_deltas(
     for name, (start, end) in ranges.items():
         if not 0 <= start < end <= delta.shape[1]:
             raise ValueError(f"invalid {name} hemisphere range")
-        output[name] = np.nanmean(delta[:, start:end], axis=1)
+        block = delta[:, start:end]
+        finite = np.isfinite(block)
+        counts = finite.sum(axis=1)
+        totals = np.where(finite, block, 0.0).sum(axis=1)
+        # np.nanmean would emit "Mean of empty slice" and return NaN for a row
+        # with no finite vertices in this hemisphere. The NaN is right; the
+        # warning is noise on a legitimate outcome, so the division is explicit.
+        output[name] = np.divide(
+            totals,
+            counts,
+            out=np.full(len(block), np.nan, dtype=np.float64),
+            where=counts > 0,
+        )
     if "left" in output and "right" in output:
         output["left_minus_right"] = output["left"] - output["right"]
     return output
@@ -492,7 +531,18 @@ def _describe(key: str) -> str:
         "roi_absolute_delta": "Absolute candidate-minus-reference ROI response [time, region]",
         "network_signed_delta": "Candidate minus reference Yeo response [time, network]",
         "network_absolute_delta": "Absolute Yeo response difference [time, network]",
-        "cortical_l2_difference": "L2 magnitude of cortical signed difference per aligned time",
+        "cortical_l2_difference": (
+            "L2 magnitude of cortical signed difference per aligned time. Grows with "
+            "the number of jointly finite vertices, so compare across rows only via "
+            "cortical_rms_difference."
+        ),
+        "cortical_rms_difference": (
+            "Availability-normalised cortical difference: L2 / sqrt(jointly finite "
+            "vertex count). This is what divergence events and windows are ranked on."
+        ),
+        "jointly_finite_vertex_count": (
+            "Jointly finite, non-medial-wall vertices behind each row's cortical metrics"
+        ),
         "cortical_cosine_similarity": "Cosine similarity of cortical patterns per aligned time",
     }
     return descriptions.get(key, key.replace("_", " "))

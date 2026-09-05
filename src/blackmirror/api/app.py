@@ -35,8 +35,14 @@ from blackmirror.api.loader import (
     VisualizationLoader,
     get_loader,
 )
+from blackmirror.api.scoring_loader import ScoringLoader, VariantLoadError
 from blackmirror.content.schemas import ContentAnalysisResult
 from blackmirror.errors import ArtifactReadError
+from blackmirror.scoring.schemas import (
+    ExperimentScoreResult,
+    NeuralObjective,
+    ScoreExplanation,
+)
 from blackmirror.utils.logging import configure_logging, get_logger
 
 logger = get_logger(__name__)
@@ -96,6 +102,14 @@ def comparison_loader_dep() -> ComparisonLoader:
 
 
 Comparisons = Annotated[ComparisonLoader, Depends(comparison_loader_dep)]
+
+
+def scoring_loader_dep() -> ScoringLoader:
+    loader = get_loader()
+    return ScoringLoader(loader.settings.artifact_dir)
+
+
+Scoring = Annotated[ScoringLoader, Depends(scoring_loader_dep)]
 
 
 class CreateComparisonRequest(BaseModel):
@@ -445,3 +459,91 @@ def get_stimulus(run_id: RunId, loader: Loader) -> FileResponse:
     """
     path = _resolve(run_id, "Stimulus", lambda: loader.stimulus_path(run_id))
     return FileResponse(path, headers={"Accept-Ranges": "bytes"})  # type: ignore[arg-type]
+
+
+# ---------------------------------------------------------------------------
+# Phase 6 - goal-conditioned scoring
+# ---------------------------------------------------------------------------
+
+
+class CreateScoreRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+    run_ids: tuple[RequestRunId, ...] = Field(min_length=1)
+    objectives: tuple[NeuralObjective, ...] = Field(min_length=1)
+    baseline_run_id: RequestRunId | None = None
+    with_networks: bool = False
+    reuse_cache: bool = True
+
+    @field_validator("run_ids", "baseline_run_id")
+    @classmethod
+    def _safe_ids(
+        cls, value: tuple[str, ...] | str | None
+    ) -> tuple[str, ...] | str | None:
+        values = value if isinstance(value, tuple) else (() if value is None else (value,))
+        if any(item in {".", ".."} for item in values):
+            raise ValueError("run ids cannot be dot path components")
+        if isinstance(value, tuple) and len(set(value)) != len(value):
+            raise ValueError("run ids must be distinct")
+        return value
+
+
+@app.get("/api/objectives/metrics")
+def objective_metrics(scoring: Scoring) -> dict[str, dict[str, str]]:
+    """Every registered objective metric, with formula and limitations."""
+    return scoring.metrics()
+
+
+@app.get("/api/experiments")
+def list_experiments(scoring: Scoring) -> list[str]:
+    return scoring.experiments()
+
+
+@app.post("/api/experiments/{experiment_id}/score", status_code=201)
+def create_score(
+    experiment_id: RunId, request: CreateScoreRequest, scoring: Scoring
+) -> ExperimentScoreResult:
+    """Score completed runs against an objective set. Never runs inference."""
+    try:
+        return scoring.create(
+            experiment_id,
+            tuple(request.run_ids),
+            tuple(request.objectives),
+            baseline_run_id=request.baseline_run_id,
+            with_networks=request.with_networks,
+            reuse_cache=request.reuse_cache,
+        )
+    except VariantLoadError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (ValueError, KeyError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/api/experiments/{experiment_id}/scores")
+def list_scores(experiment_id: RunId, scoring: Scoring) -> list[ExperimentScoreResult]:
+    return scoring.scores(experiment_id)
+
+
+@app.get("/api/experiments/{experiment_id}/scores/{objective_set_hash}")
+def get_score(
+    experiment_id: RunId, objective_set_hash: str, scoring: Scoring
+) -> ExperimentScoreResult:
+    try:
+        return scoring.score(experiment_id, objective_set_hash)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(status_code=404, detail="score not found") from exc
+
+
+@app.get("/api/experiments/{experiment_id}/scores/{objective_set_hash}/explanation")
+def get_explanation(
+    experiment_id: RunId, objective_set_hash: str, scoring: Scoring
+) -> ScoreExplanation:
+    try:
+        explanation = scoring.explanation(experiment_id, objective_set_hash)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if explanation is None:
+        raise HTTPException(status_code=404, detail="no explanation stored for this score")
+    return explanation

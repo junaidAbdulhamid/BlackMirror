@@ -8,8 +8,22 @@ to it using the signed convention `candidate - reference`.
 
 A comparison is refused unless both runs share model fingerprint, preprocessing
 configuration, compatibility patches, synthetic/real status, cortical surface,
-vertex and hemisphere ordering, prediction semantics/units, analytics schema
-and version, aggregation method, atlas identity, and ordered ROI identities.
+vertex and hemisphere ordering, subcortex inclusion, medial-wall handling,
+prediction semantics/units/**normalization**, sampling period (`tr_seconds`),
+the **hemodynamic alignment convention** (`output_is_stimulus_aligned`, the
+offset, and whether it was applied to the raw matrix), analytics schema and
+version, aggregation method, atlas identity, and ordered ROI identities — 26
+checks in total on a real pair.
+
+The last two groups are the ones that decide whether a subtraction means
+anything. Subtracting a normalised response from an unnormalised one produces a
+number with no units, and nothing downstream could detect it. Two runs with
+different sampling periods or different hemodynamic conventions attach different
+stimulus moments to the same timestamp, so aligning on time pairs rows that
+describe different content and every difference below becomes an artefact of
+that. A structural test asserts that no field of the prediction schema is left
+ungated without being explicitly listed as irrelevant, because a hand-written
+gate silently goes stale as schemas grow.
 Run IDs and stimulus hashes must differ. These checks establish matching model
 conditions; they do not turn an observational model difference into a causal
 effect.
@@ -36,14 +50,23 @@ interpolated value reproducible. Forward-fill and `index * TR` remain forbidden.
 - Cortical cosine similarity: pattern-direction similarity at an aligned time.
 - Region summaries: mean signed delta, mean absolute delta, RMS delta, and peak
   absolute delta with its sign and timestamp.
-- Divergence events: nonzero aligned times ranked by cortical L2 difference,
-  with the largest finite absolute ROI deltas attached. A deterministic minimum
-  sample separation prevents overlapping neighborhoods from being reported as
-  duplicate peaks. “Event” means numerical divergence,
-  never emotion, preference, memory, attention, or intent.
+- Divergence events: nonzero aligned times ranked by the **RMS** cortical
+  difference — the L2 divided by the square root of the number of jointly finite
+  vertices in that row — with the largest finite absolute ROI deltas attached.
+  Raw L2 is reported but is deliberately **not** the ranking key: it grows with
+  how many vertices happened to be usable, so two rows with an identical 1.0
+  difference at every comparable vertex score 2.0 and 1.414 when 4 and 2
+  vertices are finite. Ranking on that would order timepoints by data
+  availability rather than by divergence, and Phase 1 preserves non-finite
+  predictions rather than dropping them, so counts genuinely can differ. Ties
+  break by ascending sample index under a stable sort, so a rerun ranks
+  identically. A deterministic minimum sample separation prevents overlapping
+  neighborhoods from being reported as duplicate peaks. “Event” means numerical
+  divergence, never emotion, preference, memory, attention, or intent.
 - Divergence windows: observed-sample neighborhoods around ranked events,
-  reranked by mean L2 difference. Their start/end are real matched timestamps;
-  gaps inside a window are not filled.
+  reranked by mean RMS difference for the same reason, with mean and peak L2
+  also reported. Their start/end are real matched timestamps; gaps inside a
+  window are not filled.
 
 Nonfinite values remain nonfinite in signed/absolute delta artifacts. Medial-wall
 vertices are also stored as nonfinite and excluded from every cortical scalar.
@@ -77,7 +100,17 @@ both provenance URLs are pinned in the atlas manifest.
 When both corrected Phase 4 dense feature artifacts exist, their schema,
 analysis version, model identifiers, configuration and ordered feature names
 must match. Deltas are emitted only where both modality/event availability masks
-are true; otherwise values stay unavailable. One incompatible content pair is
+are true; otherwise values stay unavailable.
+
+That gate is load-bearing rather than decorative, because an unanalysed stream
+is not represented as NaN: the feature matrix starts from zeros, so a run with
+no video reports `motion = 0.0`, which is finite. Without a gate the comparison
+subtracts 0.0 from 0.0 and reports a real, measured difference of zero for
+content that was never looked at. The mapping from feature to availability mask
+is hand-written and had already gone stale — three Phase 4 features
+(`motion_structural`, `luminance_shift`, `brightness_p90`) were added upstream
+and were being compared ungated. Comparison now refuses to run when any feature
+lacks a gate, so the next feature added cannot repeat it silently. One incompatible content pair is
 reported as such without invalidating its neural comparison. The shared content
 analysis version, model identifiers, and configuration are persisted alongside
 each comparable pair.

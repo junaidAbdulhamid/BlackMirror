@@ -144,7 +144,7 @@ def _overlap_series(
             absolute = offset / SAMPLE_RATE + local[index]
             if absolute > duration:
                 break
-            key = int(round(absolute * 100))
+            key = round(absolute * 100)
             accumulated.setdefault(key, []).append(float(overlap[index]))
             frame_times[key] = absolute
 

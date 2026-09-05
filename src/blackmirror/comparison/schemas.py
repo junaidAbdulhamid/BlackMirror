@@ -98,8 +98,27 @@ class DivergenceEvent(ComparisonModel):
     rank: int = Field(ge=1)
     aligned_index: int = Field(ge=0)
     timestamp_seconds: float
-    score: float = Field(ge=0)
-    cortical_l2_difference: float = Field(ge=0)
+    score: float = Field(
+        ge=0,
+        description=(
+            "Ranking quantity: the RMS cortical difference, which is the L2 "
+            "normalised by the number of jointly finite vertices in that row. "
+            "Raw L2 is NOT used for ranking because it grows with how many "
+            "vertices happened to be usable: two rows with an identical 1.0 "
+            "difference at every comparable vertex score L2 2.0 and 1.414 when "
+            "4 and 2 vertices are finite, which would rank timepoints by data "
+            "availability rather than by divergence."
+        ),
+    )
+    cortical_l2_difference: float = Field(
+        ge=0, description="Raw L2 magnitude. Comparable across rows only when finite counts match."
+    )
+    cortical_rms_difference: float = Field(
+        ge=0, description="L2 divided by sqrt(jointly finite vertex count). This is `score`."
+    )
+    finite_vertex_count: int = Field(
+        ge=1, description="Jointly finite, non-medial-wall vertices behind this row's metrics."
+    )
     cortical_cosine_similarity: float | None
     top_region_ids: tuple[int, ...] = ()
 
@@ -111,6 +130,15 @@ class DivergenceWindow(ComparisonModel):
     observed_samples: int = Field(ge=1)
     mean_l2_difference: float = Field(ge=0)
     peak_l2_difference: float = Field(ge=0)
+    mean_rms_difference: float = Field(
+        ge=0,
+        description=(
+            "Availability-normalised mean difference across the window. Windows "
+            "are ranked on this, not on mean L2, for the reason given on "
+            "DivergenceEvent.score."
+        ),
+    )
+    peak_rms_difference: float = Field(ge=0)
     peak_time_seconds: float
 
     @model_validator(mode="after")

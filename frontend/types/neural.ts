@@ -196,8 +196,16 @@ export interface DivergenceEventSummary {
   rank: number;
   aligned_index: number;
   timestamp_seconds: number;
+  /** The ranking quantity: equals cortical_rms_difference. */
   score: number;
+  /**
+   * Raw L2. Grows with how many vertices were jointly finite in that row, so it
+   * is NOT comparable between rows and must not be used to order events.
+   */
   cortical_l2_difference: number;
+  /** L2 / sqrt(finite_vertex_count) — comparable across rows. */
+  cortical_rms_difference: number;
+  finite_vertex_count: number;
   cortical_cosine_similarity: number | null;
   top_region_ids: number[];
 }
@@ -234,6 +242,9 @@ export interface PairwiseComparisonSummary {
     observed_samples: number;
     mean_l2_difference: number;
     peak_l2_difference: number;
+    /** Windows are ranked on this, not on mean_l2_difference. */
+    mean_rms_difference: number;
+    peak_rms_difference: number;
     peak_time_seconds: number;
   }>;
   arrays_path: string;

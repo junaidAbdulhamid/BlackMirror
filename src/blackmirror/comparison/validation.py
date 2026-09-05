@@ -77,6 +77,43 @@ def validate_comparability(
     )
     check("prediction_semantics", reference.prediction.semantics, candidate.prediction.semantics)
     check("prediction_units", reference.prediction.units, candidate.prediction.units)
+    # Subtracting a normalised response from an unnormalised one produces a
+    # number with no meaning, and nothing downstream could detect it.
+    check(
+        "prediction_normalization",
+        reference.prediction.normalization,
+        candidate.prediction.normalization,
+    )
+    check(
+        "includes_subcortex",
+        reference.cortical.includes_subcortex,
+        candidate.cortical.includes_subcortex,
+    )
+    check(
+        "medial_wall_handling",
+        reference.cortical.medial_wall_handling,
+        candidate.cortical.medial_wall_handling,
+    )
+    # A row's timestamp only means the same thing in both runs if both used the
+    # same sampling period and the same hemodynamic alignment convention.
+    # Otherwise the alignment pairs rows that describe different stimulus
+    # moments, and every difference downstream is an artefact of that.
+    check("tr_seconds", reference.temporal.tr_seconds, candidate.temporal.tr_seconds)
+    check(
+        "output_is_stimulus_aligned",
+        reference.temporal.output_is_stimulus_aligned,
+        candidate.temporal.output_is_stimulus_aligned,
+    )
+    check(
+        "hemodynamic_offset_seconds",
+        reference.temporal.hemodynamic_offset_seconds,
+        candidate.temporal.hemodynamic_offset_seconds,
+    )
+    check(
+        "hemodynamic_offset_applied_to_raw",
+        reference.temporal.hemodynamic_offset_applied_to_raw,
+        candidate.temporal.hemodynamic_offset_applied_to_raw,
+    )
     check(
         "analytics_schema", reference_analytics.schema_version, candidate_analytics.schema_version
     )
