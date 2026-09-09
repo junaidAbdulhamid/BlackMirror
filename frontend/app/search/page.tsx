@@ -17,6 +17,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { BudgetPanel } from "@/components/search/BudgetPanel";
+import { SurrogatePanel } from "@/components/surrogate/SurrogatePanel";
 import { SearchTree } from "@/components/search/SearchTree";
 import { TrajectoryPlot } from "@/components/search/TrajectoryPlot";
 import { Label, Metric, Notice, Panel } from "@/components/scoring/Primitives";
@@ -39,6 +40,11 @@ import {
   resumeSearch,
   stopSearch,
 } from "@/lib/search";
+import {
+  fetchAcquisitionRounds,
+  fetchSurrogate,
+  fetchSurrogateMetrics,
+} from "@/lib/surrogate";
 import type {
   BudgetView,
   CandidateResult,
@@ -48,6 +54,11 @@ import type {
   SearchSummary,
   TrajectoryPoint,
 } from "@/types/search";
+import type {
+  AcquisitionRound,
+  SurrogateDiagnostics,
+  SurrogateSummary,
+} from "@/types/surrogate";
 
 const POLL_MS = 5000;
 
@@ -60,6 +71,9 @@ export default function SearchPage() {
   const [results, setResults] = useState<CandidateResult[]>([]);
   const [events, setEvents] = useState<SearchEvent[]>([]);
   const [report, setReport] = useState<SearchReport | null>(null);
+  const [surrogate, setSurrogate] = useState<SurrogateSummary | null>(null);
+  const [surrogateMetrics, setSurrogateMetrics] = useState<SurrogateDiagnostics | null>(null);
+  const [acquisitionRounds, setAcquisitionRounds] = useState<AcquisitionRound[]>([]);
   const [candidate, setCandidate] = useState<string | null>(null);
   const [xAxis, setXAxis] = useState<"evaluations" | "compute">("evaluations");
   const [error, setError] = useState<string | null>(null);
@@ -100,6 +114,22 @@ export default function SearchPage() {
         setReport(await fetchReport(id, signal));
       } catch {
         setReport(null);
+      }
+      // Likewise a surrogate: most searches never train one, so a 404 here is
+      // the normal case rather than a failure worth surfacing.
+      try {
+        const [current, metrics, acquisitions] = await Promise.all([
+          fetchSurrogate(id, signal),
+          fetchSurrogateMetrics(id, signal).catch(() => null),
+          fetchAcquisitionRounds(id, signal).catch(() => []),
+        ]);
+        setSurrogate(current);
+        setSurrogateMetrics(metrics);
+        setAcquisitionRounds(acquisitions);
+      } catch {
+        setSurrogate(null);
+        setSurrogateMetrics(null);
+        setAcquisitionRounds([]);
       }
     } catch (caught) {
       if (!signal?.aborted) setError(describe(caught));
@@ -396,6 +426,14 @@ export default function SearchPage() {
                     </div>
                   </div>
                 </Panel>
+              ) : null}
+
+              {surrogate ? (
+                <SurrogatePanel
+                  summary={surrogate}
+                  diagnostics={surrogateMetrics}
+                  rounds={acquisitionRounds}
+                />
               ) : null}
 
               {report?.lineage?.length ? (

@@ -1,0 +1,52 @@
+{
+  "root_run": "20260906T225022Z-630b9b86",
+  "root_fitness": -0.02315066327330513,
+  "gain_extent": 15.0,
+  "brightness_extent": 0.35,
+  "corners": [
+    {
+      "candidate_id": "corner1",
+      "gain": -15.0,
+      "brightness": -0.35,
+      "fitness": -0.05459385146652767,
+      "status": "evaluated",
+      "reason": "",
+      "wall_seconds": 1471.1832847920014,
+      "cached": false
+    },
+    {
+      "candidate_id": "corner2",
+      "gain": -15.0,
+      "brightness": 0.35,
+      "fitness": -0.03913160303731976,
+      "status": "evaluated",
+      "reason": "",
+      "wall_seconds": 1632.1161528339726,
+      "cached": false
+    },
+    {
+      "candidate_id": "corner3",
+      "gain": 15.0,
+      "brightness": -0.35,
+      "fitness": -0.055032364685759144,
+      "status": "evaluated",
+      "reason": "",
+      "wall_seconds": 1487.5094892089837,
+      "cached": false
+    },
+    {
+      "candidate_id": "corner4",
+      "gain": 15.0,
+      "brightness": 0.35,
+      "fitness": -0.03925988649156528,
+      "status": "evaluated",
+      "reason": "",
+      "wall_seconds": 1045.5254423330189,
+      "cached": false
+    }
+  ],
+  "spread": 0.015900761648439385,
+  "nuisance_floor": 0.0157,
+  "spread_over_floor": 1.012787366142636,
+  "resolvable": true
+}

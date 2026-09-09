@@ -769,14 +769,31 @@ def _extract_keyframes(
 ) -> list[tuple[float, Path]]:
     """One to three representative frames per shot."""
     frames: list[tuple[float, Path]] = []
+    attempted = 0
+    failures: list[str] = []
     for shot in shots or []:
         for timestamp in sample_times(shot.start_time, shot.end_time, config.keyframes_per_shot):
             target = directory / f"shot{shot.index:03d}_{timestamp:07.3f}.jpg"
+            attempted += 1
             try:
                 extract_frame(path, timestamp, target)
-            except Exception:
+            except Exception as error:
+                # Skipping a frame is the right behaviour; skipping it silently
+                # is not. A systematic extraction failure (a codec ffmpeg cannot
+                # read, a truncated file) otherwise looks exactly like a video
+                # with nothing in it, and the analysis downstream reports an
+                # absence of visual content rather than a failure to look.
+                failures.append(f"{timestamp:.3f}s: {error}")
                 continue
             frames.append((timestamp, target))
+    if failures:
+        log = logger.error if len(failures) == attempted else logger.warning
+        log(
+            "keyframe extraction failed for %d of %d sampled frame(s); first: %s",
+            len(failures),
+            attempted,
+            failures[0],
+        )
     if not frames and duration > 0:
         timestamp = duration / 2.0
         target = directory / f"mid_{timestamp:07.3f}.jpg"
@@ -792,16 +809,30 @@ def _extract_ocr_frames(
     ocr_dir = directory
     step = 1.0 / max(config.ocr_sample_hz, 0.01)
     frames: list[tuple[float, Path]] = []
+    attempted = 0
+    failures: list[str] = []
     timestamp = 0.0
     while timestamp < duration:
         target = ocr_dir / f"t{timestamp:07.3f}.jpg"
+        attempted += 1
         try:
             extract_frame(path, timestamp, target, width=768)
-        except Exception:
+        except Exception as error:
+            failures.append(f"{timestamp:.3f}s: {error}")
             timestamp += step
             continue
         frames.append((timestamp, target))
         timestamp += step
+    if failures:
+        # Unlike keyframes there is no fallback frame here, so a total failure
+        # returns an empty list and every text overlay silently goes unfound.
+        log = logger.error if len(failures) == attempted else logger.warning
+        log(
+            "OCR frame extraction failed for %d of %d sampled frame(s); first: %s",
+            len(failures),
+            attempted,
+            failures[0],
+        )
     return frames
 
 

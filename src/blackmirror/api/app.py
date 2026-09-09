@@ -77,6 +77,7 @@ from blackmirror.scoring.schemas import (
     NeuralObjective,
     ScoreExplanation,
 )
+from blackmirror.surrogate.storage import SurrogateStore
 from blackmirror.utils.logging import configure_logging, get_logger
 
 logger = get_logger(__name__)
@@ -1032,3 +1033,103 @@ def eliminate_candidate(
     return _search(  # type: ignore[return-value]
         search_id, lambda: search.eliminate(search_id, str(body.candidate_id))
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 10 - surrogate modelling
+#
+# Read-only. A surrogate is trained by the optimization loop, not by an HTTP
+# request; these routes report what it learned and how far it should be
+# trusted. Every score served here is an estimate, never a measurement.
+# ---------------------------------------------------------------------------
+
+
+def _surrogate_store(search_id: str) -> SurrogateStore:
+    loader = get_loader()
+    try:
+        return SurrogateStore(loader.settings.artifact_dir, search_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+def _require_surrogate(search_id: str) -> SurrogateStore:
+    store = _surrogate_store(search_id)
+    if not store.exists:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"search '{search_id}' has no surrogate; one is created by the "
+                f"optimization loop once enough real evaluations exist"
+            ),
+        )
+    return store
+
+
+@app.get("/api/search/{search_id}/surrogate")
+def get_surrogate(search_id: RunId) -> dict[str, object]:
+    """The current model, its training set, and whether it may be trusted."""
+    store = _require_surrogate(search_id)
+    dataset = store.read_dataset()
+    diagnostics = store.read_diagnostics() or {}
+    latest = store.latest_model()
+    return {
+        "search_id": search_id,
+        "training_samples": 0 if dataset is None else dataset.size,
+        "target_spread": None if dataset is None else dataset.target_spread(),
+        "excluded_records": 0 if dataset is None else len(dataset.excluded),
+        "state": diagnostics.get("state"),
+        "trusted": diagnostics.get("trusted"),
+        "trust_reason": diagnostics.get("trust_reason"),
+        "model": None if latest is None else latest.model_dump(mode="json"),
+        "model_versions": len(store.read_models()),
+    }
+
+
+@app.get("/api/search/{search_id}/surrogate/metrics")
+def get_surrogate_metrics(search_id: RunId) -> dict[str, object]:
+    """Validation quality. The prefix scheme is the one that reflects use."""
+    diagnostics = _require_surrogate(search_id).read_diagnostics()
+    if diagnostics is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"search '{search_id}' has a surrogate but no diagnostics yet",
+        )
+    return diagnostics
+
+
+@app.get("/api/search/{search_id}/surrogate/dataset")
+def get_surrogate_dataset(search_id: RunId) -> dict[str, object]:
+    """The real observations the surrogate was trained on, and nothing else."""
+    dataset = _require_surrogate(search_id).read_dataset()
+    if dataset is None:  # pragma: no cover - exists() already checked
+        raise HTTPException(status_code=404, detail="dataset unreadable")
+    return dataset.model_dump(mode="json")
+
+
+@app.get("/api/search/{search_id}/surrogate/models")
+def get_surrogate_models(search_id: RunId) -> list[dict[str, object]]:
+    """Every model version, so a prediction can be traced to what produced it."""
+    return [
+        item.model_dump(mode="json")
+        for item in _require_surrogate(search_id).read_models()
+    ]
+
+
+@app.get("/api/search/{search_id}/acquisition")
+def get_acquisition_rounds(search_id: RunId) -> list[dict[str, object]]:
+    """Predicted against actual, per round. The diagnostic that matters most."""
+    return [
+        item.model_dump(mode="json")
+        for item in _require_surrogate(search_id).read_rounds()
+    ]
+
+
+@app.get("/api/search/{search_id}/surrogate/report")
+def get_surrogate_report(search_id: RunId) -> dict[str, object]:
+    report = _require_surrogate(search_id).read_report()
+    if report is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"search '{search_id}' has no surrogate report yet",
+        )
+    return report

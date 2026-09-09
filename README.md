@@ -61,6 +61,17 @@ and proposes candidate interventions. Every output is a hypothesis, and a
 recommendation becomes a candidate only after a recorded human decision.
 See [`docs/phase7_optimization_agent.md`](docs/phase7_optimization_agent.md).
 
+**Phase 10 ✓ Surrogate Modelling and Bayesian Optimization** — a cheap learned
+approximation of the expensive objective, used to screen thousands of candidate
+variants and choose which few deserve a real evaluation. Gaussian Process and
+tree-ensemble surrogates, expected improvement and upper confidence bound, a
+trust gate that refuses to let an unproven model spend budget, and predicted
+against actual recorded every round. Measured on synthetic surfaces: **about
+half the evaluations** to reach the same score as random search.
+See [`docs/phase10_surrogate_optimization.md`](docs/phase10_surrogate_optimization.md),
+[`docs/bayesian_optimization.md`](docs/bayesian_optimization.md) and
+[`docs/surrogate_evaluation.md`](docs/surrogate_evaluation.md).
+
 **Phase 9 ✓ Automated Neural Search** — a budgeted, sample-efficient search over
 content variants: a declared parameter space, deterministic candidate
 materialization, seven interchangeable strategies, guardrails that veto an
@@ -310,7 +321,17 @@ blackmirror search-trajectory <search_id>   # the sample-efficiency curve
 blackmirror search-report <search_id>
 python scripts/benchmark_search_strategies.py   # synthetic, free, seconds
 python scripts/benchmark_search_pipeline.py     # real, hours
+
+# Phase 10 — surrogate-assisted optimization.
+python scripts/benchmark_surrogate.py           # random vs beam vs bayesian
+python scripts/measure_space_range.py           # does a space clear the noise floor?
 ```
+
+The surrogate never replaces the real evaluator. It ranks candidates cheaply so
+the expensive evaluations go where they are most likely to be worth spending,
+and every number it produces is labelled an estimate until the real pipeline has
+measured it. A surrogate that cannot demonstrate rank skill on held-out data is
+not permitted to choose anything.
 
 A search evaluates candidates through the full Phase 8 loop, so its cost is
 measured in evaluations rather than seconds. It reports the strongest candidate
@@ -362,4 +383,5 @@ only** — which constrains any commercial deployment built on it. See
 | 7 | **Optimization agent** — evidence-backed candidate interventions | ✓ |
 | 8 | **Re-simulation loop** — measure an approved candidate | ✓ |
 | 9 | **A/B/N search** — budgeted, sample-efficient optimization | ✓ |
+| 10 | **Surrogate optimization** — learned screening, Bayesian search | ✓ |
 | 10 | Production infrastructure | |

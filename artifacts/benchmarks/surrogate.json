@@ -1,0 +1,64 @@
+{
+  "one_peak": {
+    "threshold": -1.0085,
+    "optimum": 0.0,
+    "random": {
+      "median_best": -1.0085,
+      "best_at_5": -6.2459999999999996,
+      "best_at_10": -1.2085,
+      "best_at_20": -1.0085,
+      "median_evaluations_to_threshold_censored": 19.5,
+      "median_evaluations_among_reachers": 4,
+      "runs_reaching_threshold": "3/6"
+    },
+    "beam": {
+      "median_best": -0.3919999999999999,
+      "best_at_5": -3.6675000000000004,
+      "best_at_10": -1.235,
+      "best_at_20": -0.3919999999999999,
+      "median_evaluations_to_threshold_censored": 13.5,
+      "median_evaluations_among_reachers": 13,
+      "runs_reaching_threshold": "5/6"
+    },
+    "bayesian": {
+      "median_best": -0.0009999999999999907,
+      "best_at_5": -6.2459999999999996,
+      "best_at_10": -0.31899999999999984,
+      "best_at_20": -0.0009999999999999961,
+      "median_evaluations_to_threshold_censored": 9.5,
+      "median_evaluations_among_reachers": 9.5,
+      "runs_reaching_threshold": "6/6"
+    }
+  },
+  "two_peaks": {
+    "threshold": 5.412,
+    "optimum": 6.0,
+    "random": {
+      "median_best": 5.412,
+      "best_at_5": 3.8057999999999996,
+      "best_at_10": 5.319599999999999,
+      "best_at_20": 5.412,
+      "median_evaluations_to_threshold_censored": 17.0,
+      "median_evaluations_among_reachers": 3,
+      "runs_reaching_threshold": "3/6"
+    },
+    "beam": {
+      "median_best": 5.6745,
+      "best_at_5": 3.8057999999999996,
+      "best_at_10": 5.319599999999999,
+      "best_at_20": 5.4954,
+      "median_evaluations_to_threshold_censored": 13.5,
+      "median_evaluations_among_reachers": 6,
+      "runs_reaching_threshold": "5/6"
+    },
+    "bayesian": {
+      "median_best": 5.9925,
+      "best_at_5": 3.8057999999999996,
+      "best_at_10": 5.7273,
+      "best_at_20": 5.823,
+      "median_evaluations_to_threshold_censored": 9.0,
+      "median_evaluations_among_reachers": 9,
+      "runs_reaching_threshold": "5/6"
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "input_shape_each": [
+    300,
+    20484
+  ],
+  "roi_shape_each": [
+    300,
+    148
+  ],
+  "difference_seconds": 0.035096875042654574,
+  "python_peak_memory_bytes": 98392560,
+  "outputs": {
+    "cortical_delta_shape": [
+      300,
+      20484
+    ],
+    "roi_delta_shape": [
+      300,
+      148
+    ],
+    "l2_shape": [
+      300
+    ]
+  },
+  "seed": 45
+}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import tempfile
 from pathlib import Path
 
@@ -18,6 +19,19 @@ TIMESERIES_FILE = "timeseries.npz"
 ATLAS_MAPPING_FILE = "atlas_mapping.npz"
 
 
+def _validate_run_id(value: str) -> None:
+    """Refuse a run id that would resolve outside the artifact root.
+
+    The HTTP layer already constrains every path parameter to this same
+    pattern, so this is not the only guard. It is here because a store should
+    not depend on its caller having been an HTTP request: the CLI, the scripts
+    and the notebooks all construct one directly, and every other store in this
+    codebase validates its own ids.
+    """
+    if value in {".", ".."} or re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", value) is None:
+        raise ValueError("invalid run id")
+
+
 class AnalyticsStore:
     def __init__(self, artifact_root: Path) -> None:
         self.artifact_root = Path(artifact_root)
@@ -28,6 +42,7 @@ class AnalyticsStore:
         arrays: dict[str, NDArray[np.generic]],
         atlas: AtlasMapping,
     ) -> Path:
+        _validate_run_id(result.run_id)
         run_dir = self.artifact_root / "runs" / result.run_id
         if not (run_dir / "predictions.npy").exists():
             raise FileNotFoundError(f"completed source run not found: {run_dir}")
@@ -45,6 +60,7 @@ class AnalyticsStore:
         return output
 
     def read(self, run_id: str) -> NeuralAnalyticsResult:
+        _validate_run_id(run_id)
         path = self.artifact_root / "runs" / run_id / ANALYTICS_DIR / METADATA_FILE
         return NeuralAnalyticsResult.model_validate_json(path.read_text(encoding="utf-8"))
 

@@ -1,0 +1,212 @@
+{
+  "nuisance_floor_whole_cortex": 0.0157,
+  "minimum_vertices_per_region": 20,
+  "atlas": "Destrieux 2009",
+  "caveat": "Predicted responses, not measurements. One clip, one deterministic run per condition, so no significance test is possible. The 0.0157 floor is a whole-cortex quantity; the ROI-level floor is higher and has not been measured.",
+  "contrasts": {
+    "gain_at_bright_high": {
+      "whole_cortex_mean_difference": -0.0001282833982259035,
+      "mean_absolute_vertex_difference": 0.005410106852650642,
+      "cancellation_ratio": 42.17308652148109,
+      "whole_cortex_over_floor": 0.008170917084452453,
+      "largest_roi_effect": 0.026018217206001282,
+      "largest_roi_over_whole_cortex_floor": 1.6572112870064513,
+      "regions_considered": 141,
+      "top_regions": [
+        {
+          "name": "S_occipital_ant",
+          "hemisphere": "right",
+          "mean_difference": -0.026018217206001282,
+          "vertices": 49
+        },
+        {
+          "name": "S_temporal_transverse",
+          "hemisphere": "left",
+          "mean_difference": -0.016832266002893448,
+          "vertices": 26
+        },
+        {
+          "name": "Pole_occipital",
+          "hemisphere": "right",
+          "mean_difference": -0.016585247591137886,
+          "vertices": 168
+        },
+        {
+          "name": "Pole_occipital",
+          "hemisphere": "left",
+          "mean_difference": -0.016357626765966415,
+          "vertices": 112
+        },
+        {
+          "name": "G_temp_sup-G_T_transv",
+          "hemisphere": "left",
+          "mean_difference": -0.015404344536364079,
+          "vertices": 46
+        },
+        {
+          "name": "S_collat_transv_post",
+          "hemisphere": "right",
+          "mean_difference": -0.01507479790598154,
+          "vertices": 27
+        }
+      ],
+      "runs": {
+        "left": "20260909T143924Z-0c996850",
+        "right": "20260909T054427Z-5eef4f96"
+      }
+    },
+    "gain_at_bright_low": {
+      "whole_cortex_mean_difference": -0.00043851332156918943,
+      "mean_absolute_vertex_difference": 0.003406145377084613,
+      "cancellation_ratio": 7.767484383133352,
+      "whole_cortex_over_floor": 0.02793078481332417,
+      "largest_roi_effect": 0.015120510943233967,
+      "largest_roi_over_whole_cortex_floor": 0.9630898689957942,
+      "regions_considered": 141,
+      "top_regions": [
+        {
+          "name": "S_occipital_ant",
+          "hemisphere": "right",
+          "mean_difference": -0.015120510943233967,
+          "vertices": 49
+        },
+        {
+          "name": "G_temp_sup-Lateral",
+          "hemisphere": "left",
+          "mean_difference": -0.010060254484415054,
+          "vertices": 180
+        },
+        {
+          "name": "S_temporal_transverse",
+          "hemisphere": "left",
+          "mean_difference": -0.009772739373147488,
+          "vertices": 26
+        },
+        {
+          "name": "G_temp_sup-Lateral",
+          "hemisphere": "right",
+          "mean_difference": -0.00972706452012062,
+          "vertices": 161
+        },
+        {
+          "name": "S_temporal_sup",
+          "hemisphere": "left",
+          "mean_difference": -0.009349708445370197,
+          "vertices": 426
+        },
+        {
+          "name": "G_temp_sup-G_T_transv",
+          "hemisphere": "left",
+          "mean_difference": -0.009156531654298306,
+          "vertices": 46
+        }
+      ],
+      "runs": {
+        "left": "20260909T135837Z-87d18d3f",
+        "right": "20260909T051956Z-79f5b97c"
+      }
+    },
+    "brightness_at_gain_high": {
+      "whole_cortex_mean_difference": 0.01577247865498066,
+      "mean_absolute_vertex_difference": 0.03758621588349342,
+      "cancellation_ratio": 2.3830253129950747,
+      "whole_cortex_over_floor": 1.0046164748395325,
+      "largest_roi_effect": 0.1891435980796814,
+      "largest_roi_over_whole_cortex_floor": 12.047362935011554,
+      "regions_considered": 141,
+      "top_regions": [
+        {
+          "name": "S_oc-temp_med_and_Lingual",
+          "hemisphere": "right",
+          "mean_difference": 0.1891435980796814,
+          "vertices": 134
+        },
+        {
+          "name": "S_oc-temp_med_and_Lingual",
+          "hemisphere": "left",
+          "mean_difference": 0.1437007337808609,
+          "vertices": 169
+        },
+        {
+          "name": "G_oc-temp_lat-fusifor",
+          "hemisphere": "right",
+          "mean_difference": 0.13469499349594116,
+          "vertices": 110
+        },
+        {
+          "name": "S_calcarine",
+          "hemisphere": "right",
+          "mean_difference": 0.12342805415391922,
+          "vertices": 177
+        },
+        {
+          "name": "G_cingul-Post-ventral",
+          "hemisphere": "right",
+          "mean_difference": 0.11427019536495209,
+          "vertices": 41
+        },
+        {
+          "name": "G_oc-temp_lat-fusifor",
+          "hemisphere": "left",
+          "mean_difference": 0.1135321855545044,
+          "vertices": 113
+        }
+      ],
+      "runs": {
+        "left": "20260909T143924Z-0c996850",
+        "right": "20260909T135837Z-87d18d3f"
+      }
+    },
+    "brightness_at_gain_low": {
+      "whole_cortex_mean_difference": 0.015462248586118221,
+      "mean_absolute_vertex_difference": 0.03697332739830017,
+      "cancellation_ratio": 2.3911999081100195,
+      "whole_cortex_over_floor": 0.984856597841925,
+      "largest_roi_effect": 0.18991482257843018,
+      "largest_roi_over_whole_cortex_floor": 12.096485514549693,
+      "regions_considered": 141,
+      "top_regions": [
+        {
+          "name": "S_oc-temp_med_and_Lingual",
+          "hemisphere": "right",
+          "mean_difference": 0.18991482257843018,
+          "vertices": 134
+        },
+        {
+          "name": "S_oc-temp_med_and_Lingual",
+          "hemisphere": "left",
+          "mean_difference": 0.14384829998016357,
+          "vertices": 169
+        },
+        {
+          "name": "G_oc-temp_lat-fusifor",
+          "hemisphere": "right",
+          "mean_difference": 0.13860675692558289,
+          "vertices": 110
+        },
+        {
+          "name": "S_collat_transv_post",
+          "hemisphere": "right",
+          "mean_difference": 0.12053333222866058,
+          "vertices": 27
+        },
+        {
+          "name": "S_calcarine",
+          "hemisphere": "right",
+          "mean_difference": 0.1185401901602745,
+          "vertices": 177
+        },
+        {
+          "name": "G_oc-temp_lat-fusifor",
+          "hemisphere": "left",
+          "mean_difference": 0.11568272858858109,
+          "vertices": 113
+        }
+      ],
+      "runs": {
+        "left": "20260909T054427Z-5eef4f96",
+        "right": "20260909T051956Z-79f5b97c"
+      }
+    }
+  }
+}

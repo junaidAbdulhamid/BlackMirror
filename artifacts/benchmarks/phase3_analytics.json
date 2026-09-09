@@ -1,0 +1,15 @@
+{
+  "input_shape": [
+    300,
+    20484
+  ],
+  "roi_shape": [
+    300,
+    148
+  ],
+  "aggregation_seconds": 0.3592085840064101,
+  "global_and_change_seconds": 0.2462907080189325,
+  "total_seconds": 0.6054992920253426,
+  "python_peak_memory_bytes": 210391503,
+  "seed": 42
+}

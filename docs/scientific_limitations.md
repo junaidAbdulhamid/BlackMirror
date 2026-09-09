@@ -131,6 +131,68 @@ and treat a small margin as unresolved rather than as a finding.
 This is one nuisance variable measured on three variants of one clip. It is a
 lower bound on the pipeline's sensitivity, not a complete error budget.
 
+### 6b. Measured: a scalar objective can report "no effect" while the prediction moves
+
+A second measurement, made to decide whether a search space was worth searching,
+found something more basic. Four corners of a ±15 dB by ±0.35 brightness grid
+were materialized and scored through the full pipeline, against the unedited
+root at -0.023151.
+
+| effect | holding | change in whole-cortex mean | against the 0.0157 floor |
+| --- | --- | --- | --- |
+| loudness, -15 dB -> +15 dB | brightness -0.35 | 0.000439 | 0.03x |
+| loudness, -15 dB -> +15 dB | brightness +0.35 | 0.000128 | 0.01x |
+| brightness, -0.35 -> +0.35 | gain -15 dB | 0.015462 | 0.98x |
+| brightness, -0.35 -> +0.35 | gain +15 dB | 0.015772 | 1.00x |
+
+**A 30 dB swing in loudness moved the predicted whole-cortex mean by one to
+three percent of the nuisance floor.** The same swing in brightness moved it by
+essentially the whole floor. Each parameter's two measurements agree closely
+with each other, so this is consistent structure rather than one stray corner.
+
+**And the obvious conclusion from that — that the model ignores loudness — is
+false.** Taking the identical contrasts per region rather than as one average
+(`scripts/measure_roi_effects.py`, artifact
+`artifacts/benchmarks/roi_effects.json`):
+
+| contrast | whole-cortex mean | mean per-vertex \|change\| | ratio |
+| --- | --- | --- | --- |
+| loudness, at brightness +0.35 | 0.000128 | 0.005410 | **42.2x** |
+| loudness, at brightness -0.35 | 0.000439 | 0.003406 | **7.8x** |
+| brightness, at gain +15 | 0.015772 | 0.037586 | 2.4x |
+| brightness, at gain -15 | 0.015462 | 0.036973 | 2.4x |
+
+Loudness moves individual vertices by up to forty times what it moves the
+average of them. The effect is spatially opposed and cancels; brightness moves
+the cortex coherently and survives. The regions loudness moves include the
+transverse temporal gyrus and sulcus — Heschl's gyrus, primary auditory cortex —
+in both contrasts and in neither brightness contrast, while brightness lands on
+calcarine, lingual and fusiform cortex.
+
+**What follows from this.** A scalar summary can report that nothing happened
+while the prediction it summarises changed substantially. Before concluding from
+a single number that a manipulation had no effect, take the same contrast
+regionally. "No effect on this objective" and "no effect" are different
+statements, and only the first was measured.
+
+The converse also holds and is the older warning: an edit being materializable,
+and the pipeline returning a different number, does not make the difference
+interpretable. Both directions require measuring against a floor.
+
+**How much of the regional reading to believe.** Less than the anatomy invites.
+The magnitudes are 0.015-0.026 against a floor of 0.0157 that was measured as a
+*whole-cortex* quantity; an ROI mean over 26-49 vertices is far noisier than a
+mean over 20,484, so the applicable floor is higher and **has not been
+measured**. There is one clip and one deterministic run per condition, so no
+significance test is available, and the argument rests on anatomical coherence
+across two independent contrasts. Loudness's single largest effect is in an
+occipital region, which a purely auditory manipulation does not predict. Treat
+it as a lead worth following, not as an established localisation.
+
+And none of it is a claim about hearing, seeing, or anything a person would
+experience. It is a statement about which vertices of a predicted response
+moved.
+
 ## 7. Not for medical or diagnostic use
 
 BlackMirror must not be used to diagnose, screen for, or make any inference

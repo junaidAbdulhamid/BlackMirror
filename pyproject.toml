@@ -18,6 +18,10 @@ requires-python = ">=3.11,<3.13"
 # and testable without any ML stack installed. See docs/architecture.md.
 dependencies = [
     "pydantic>=2.7",
+    # Phase 10 surrogate modelling. Both were already present transitively;
+    # declaring them makes the dependency real rather than accidental.
+    "scikit-learn>=1.5",
+    "scipy>=1.13",
     "pydantic-settings>=2.2",
     "numpy>=1.26",
     "pandas>=2.2",
@@ -77,6 +81,17 @@ testpaths = ["tests"]
 addopts = "-m 'not tribe_integration'"
 markers = [
     "tribe_integration: requires a real TRIBE v2 checkpoint and model dependencies (opt-in)",
+]
+# numpy 2.2 built against Apple Accelerate raises these three flags for any
+# sufficiently large matmul regardless of its operands: a (400, 8) product of
+# uniform values in [0, 1] triggers all three and returns a perfectly finite
+# result. They say nothing about the numbers, so they are filtered here rather
+# than read as a signal. What actually protects the surrogate is the explicit
+# finiteness check in `blackmirror.surrogate.models._ensure_finite`; the filter
+# is scoped to this message and this module so a real overflow elsewhere is
+# still reported.
+filterwarnings = [
+    "ignore:(divide by zero|overflow|invalid value) encountered in matmul:RuntimeWarning:sklearn.gaussian_process._gpr",
 ]
 
 [tool.ruff]

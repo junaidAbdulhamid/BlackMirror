@@ -1,0 +1,50 @@
+[
+  {
+    "strategy": "random_search",
+    "search_id": "bench-random_search-17",
+    "root_fitness": -0.02315066327330513,
+    "best_fitness": -0.023348662946975518,
+    "absolute_improvement": -0.00019799967367038762,
+    "improvement_is_resolvable": false,
+    "evaluations": 3,
+    "evaluations_to_best": 3,
+    "tribe_runs": 3,
+    "wall_seconds": 4151.399450583034,
+    "wall_seconds_to_best": 4151.357855331909,
+    "cache_hit_rate": 0.0,
+    "failure_rate": 0.0,
+    "stopping_reason": "max_candidates",
+    "best_genome": {
+      "brightness": 0.06,
+      "gain": 3.0
+    },
+    "tied_with_best": [
+      "c0001",
+      "c0002"
+    ]
+  },
+  {
+    "strategy": "local_search",
+    "search_id": "bench-local_search-17",
+    "root_fitness": -0.02315066327330513,
+    "best_fitness": -0.025312705543752034,
+    "absolute_improvement": -0.002162042270446904,
+    "improvement_is_resolvable": false,
+    "evaluations": 3,
+    "evaluations_to_best": 2,
+    "tribe_runs": 2,
+    "wall_seconds": 2749.258779417025,
+    "wall_seconds_to_best": 1370.9275195830269,
+    "cache_hit_rate": 0.25,
+    "failure_rate": 0.0,
+    "stopping_reason": "max_candidates",
+    "best_genome": {
+      "brightness": 0.09,
+      "gain": 0.0
+    },
+    "tied_with_best": [
+      "c0001",
+      "c0003"
+    ]
+  }
+]

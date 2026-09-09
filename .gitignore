@@ -14,8 +14,13 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+# Anchored to the repository root. These come from the Python template, where
+# they mean setuptools build output at the top level, but a bare `lib/` matches
+# a directory of that name at any depth -- and it silently excluded the whole of
+# `frontend/lib/`: every API client, the colour mapping, the render hot path and
+# ten test files, none of them in the repository.
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -225,17 +230,27 @@ __marimo__/
 .env
 
 # TRIBE v2 feature cache (exca TaskInfra) — large intermediate tensors.
-cache/
+# Anchored: a bare `cache/` matches a directory of that name at any depth, and
+# `cache` is too common a name to exclude blindly across the whole tree.
+/cache/
 
 # Model checkpoints — 709 MB+, fetched from HuggingFace, never committed.
+# `models/` is anchored for the same reason as `/lib/` above: unanchored, it
+# would silently exclude any package directory called `models` anywhere in the
+# source tree, which is among the likeliest names in a codebase like this one.
 *.ckpt
 *.safetensors
-models/
+/models/
 
 # Inference outputs. Run directories hold prediction matrices (tens of MB each).
 artifacts/runs/
 artifacts/index.jsonl
-artifacts/benchmarks/
+# Per-run benchmark dumps are named by run id and are regenerated on every run.
+# The curated summaries beside them (phase*.json, surrogate.json, space_range,
+# roi_effects, search_pipeline) are the provenance for numbers quoted in docs/,
+# are a few kilobytes each, and ARE committed -- a document citing an artifact
+# path that is not in the repository cannot be checked by the person reading it.
+artifacts/benchmarks/[0-9]*Z-*.json
 artifacts/comparisons/
 artifacts/experiments/
 artifacts/resimulations/
