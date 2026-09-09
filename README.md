@@ -46,6 +46,38 @@ visual semantics, OCR, audio signals, transcript reuse, multimodal event fusion,
 and non-causal alignment of content to predicted neural events.
 See [`docs/phase4_content_intelligence.md`](docs/phase4_content_intelligence.md).
 
+**Phase 5 ✓ Neural A/B Comparison** — comparability gating, temporal alignment
+across variants, per-vertex and per-ROI contrasts with multiple-comparison
+correction. See [`docs/phase5_neural_comparison.md`](docs/phase5_neural_comparison.md).
+
+**Phase 6 ✓ Goal-Conditioned Scoring** — explicitly declared objectives over
+predicted responses, a metric registry, per-sample decomposition, effective
+weights, and normalization that never hides a negligible raw difference.
+See [`docs/phase6_goal_scoring.md`](docs/phase6_goal_scoring.md).
+
+**Phase 7 ✓ Neural Content Optimization Agent** — locates where a variant
+underperforms its objective, measures how higher-scoring variants differ there,
+and proposes candidate interventions. Every output is a hypothesis, and a
+recommendation becomes a candidate only after a recorded human decision.
+See [`docs/phase7_optimization_agent.md`](docs/phase7_optimization_agent.md).
+
+**Phase 9 ✓ Automated Neural Search** — a budgeted, sample-efficient search over
+content variants: a declared parameter space, deterministic candidate
+materialization, seven interchangeable strategies, guardrails that veto an
+inadmissible winner, Pareto search across objectives, a persistent evaluation
+cache, checkpointing and resume. Reports the best *observed* candidate and
+whether its lead clears the pipeline's measured noise floor.
+See [`docs/phase9_neural_search.md`](docs/phase9_neural_search.md),
+[`docs/search_algorithms.md`](docs/search_algorithms.md) and
+[`docs/search_benchmarks.md`](docs/search_benchmarks.md).
+
+**Phase 8 ✓ Bounded Re-Simulation** — binds an approved candidate to media a
+person built and measures it: a durable, resumable state machine through
+inference, analytics, content, scoring and comparison, with direction-aware
+outcomes and separate hypothesis verdicts. The only part of the product that
+runs the model on demand.
+See [`docs/phase8_resimulation_loop.md`](docs/phase8_resimulation_loop.md).
+
 ## Architecture
 
 ```
@@ -260,6 +292,41 @@ Results are cached on a key covering the stimulus hash, every model id, the
 analysis version and the configuration — measured **16.8 s cold, 0.42 s cached**.
 The API never triggers the pipeline; an un-analysed run 404s with instructions.
 
+## Scoring, optimization and re-simulation (Phases 6–8)
+
+```bash
+# Phase 8 — measure a variant you built against an approved hypothesis.
+blackmirror bind-resimulation loop-1 \
+    --experiment exp --optimization <key> --candidate cand-1 \
+    --media path/to/variant.mp4 --out request.json
+blackmirror resimulate request.json     # runs inline; a 10 s variant took ~2 h
+blackmirror list-resimulations
+blackmirror resume-resimulation loop-1  # verifies checksums, continues
+blackmirror stop-resimulation loop-1    # observed at the next stage boundary
+
+# Phase 9 — automated search over a declared space.
+blackmirror list-searches
+blackmirror search-trajectory <search_id>   # the sample-efficiency curve
+blackmirror search-report <search_id>
+python scripts/benchmark_search_strategies.py   # synthetic, free, seconds
+python scripts/benchmark_search_pipeline.py     # real, hours
+```
+
+A search evaluates candidates through the full Phase 8 loop, so its cost is
+measured in evaluations rather than seconds. It reports the strongest candidate
+it **observed**, never an optimum, and states whether that lead is larger than
+the pipeline's own sensitivity to choices that should not matter.
+
+The request is *derived*, not typed: the objective set, both of its hashes and
+the per-hypothesis direction map are read from stored Phase 6 and Phase 7
+records, so a pass cannot end up measuring an objective nobody approved. The
+same flow is available at `/scoring`, `/optimize` and `/resimulation` in the UI.
+
+Phase 8 is the one part of the product that runs the model on demand, and the
+only route family in the API that can reach one. It never edits media: it reads
+the file where it lies, records its hash, and refuses a variant whose bytes
+match the source.
+
 ## Testing
 
 ```bash
@@ -290,9 +357,9 @@ only** — which constrains any commercial deployment built on it. See
 | 2 | **Interactive Cortical Visualization** — 3D cortex, playback sync | ✓ |
 | 3 | **Neural Analytics** — atlas ROIs, temporal events | ✓ |
 | 4 | **Multimodal Content Intelligence** — content events, neural association | ✓ |
-| 5 | Neural A/B testing | |
-| 6 | Goal-conditioned scoring | |
-| 7 | Optimization agent | |
-| 8 | Re-simulation loop | |
-| 9 | A/B/N search | |
+| 5 | **Neural A/B testing** — comparability gating, aligned contrasts | ✓ |
+| 6 | **Goal-conditioned scoring** — declared objectives, decomposition | ✓ |
+| 7 | **Optimization agent** — evidence-backed candidate interventions | ✓ |
+| 8 | **Re-simulation loop** — measure an approved candidate | ✓ |
+| 9 | **A/B/N search** — budgeted, sample-efficient optimization | ✓ |
 | 10 | Production infrastructure | |

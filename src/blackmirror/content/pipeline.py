@@ -64,7 +64,7 @@ from blackmirror.content.audio.tagging import (
     segments_from_tags,
 )
 from blackmirror.content.features import build_feature_matrix
-from blackmirror.content.fusion import fuse
+from blackmirror.content.fusion import fuse, structural_events
 from blackmirror.content.language.semantics import (
     EMBEDDING_MODEL_ID,
     EmbeddingModel,
@@ -481,6 +481,19 @@ def analyze_content(
     )
     stage.warnings.extend(fusion_warnings)
 
+    # Structural markers are appended, not merged into the fused intervals: an
+    # opening segment is usually also a speech or music segment, and forcing one
+    # label onto it would lose that.
+    structural, structural_warnings = stage.run(
+        "structural_events",
+        lambda: structural_events(
+            duration=duration, scenes=scenes, objects=object_appearances
+        ),
+        ([], []),
+    )
+    stage.warnings.extend(structural_warnings)
+    structural = sorted(structural, key=lambda item: item.start_time)
+
     matrix, feature_names, feature_times = stage.run(
         "features",
         lambda: build_feature_matrix(
@@ -547,6 +560,7 @@ def analyze_content(
         language=tuple(language),
         calls_to_action=tuple(calls_to_action),
         events=tuple(events),
+        structural_markers=tuple(structural),
         associations=tuple(associations),
         correlations=tuple(correlations),
         metrics=computed,

@@ -1,8 +1,15 @@
 """Visualization API.
 
-A thin read-only HTTP surface over Phase 1 artifacts. It runs **no inference**:
-every response is assembled from files a completed run already wrote. Rotating
-the brain or dragging the timeline must never touch a model.
+A thin HTTP surface over Phase 1 artifacts. Every route here is read-only with
+exactly one exception, named below: responses are assembled from files a
+completed run already wrote. Rotating the brain or dragging the timeline must
+never touch a model.
+
+THE EXCEPTION: the Phase 8 re-simulation routes do run TRIBE, because measuring
+a proposed variant is the entire point of that phase. They never do it inside
+the request. A start binds the run durably, hands it to a background worker and
+returns the checkpoint that is now on disk; clients poll for the rest. No other
+route can reach a model, and this one is confined to `/api/resimulations`.
 
 Transport strategy — arrays are served as raw little-endian binary, not JSON.
 A prediction matrix is `T x 20484 float32`; JSON would inflate that roughly 8x
@@ -15,6 +22,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path as FilePath
 from typing import Annotated, Literal
 
 import numpy as np
@@ -35,9 +43,35 @@ from blackmirror.api.loader import (
     VisualizationLoader,
     get_loader,
 )
+from blackmirror.api.optimization_loader import (
+    OptimizationLoader,
+    OptimizationLoadError,
+)
+from blackmirror.api.resimulation_loader import (
+    RequestBuildError,
+    ResimulationLoader,
+    ResimulationLoadError,
+    get_resimulation_loader,
+)
 from blackmirror.api.scoring_loader import ScoringLoader, VariantLoadError
+from blackmirror.api.search_loader import (
+    SearchLoader,
+    SearchLoadError,
+    get_search_loader,
+)
 from blackmirror.content.schemas import ContentAnalysisResult
 from blackmirror.errors import ArtifactReadError
+from blackmirror.optimization.schemas import (
+    OptimizationRequest,
+    OptimizationResult,
+    ProposedVariantSpec,
+    RecommendationReview,
+)
+from blackmirror.resimulation.schemas import (
+    ResimulationConflict,
+    ResimulationResult,
+    StopReason,
+)
 from blackmirror.scoring.schemas import (
     ExperimentScoreResult,
     NeuralObjective,
@@ -58,7 +92,10 @@ _IMMUTABLE = "public, max-age=31536000, immutable"
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_logging("INFO")
-    logger.info("Visualization API ready (read-only; no inference)")
+    logger.info(
+        "Visualization API ready (read-only except the Phase 8 re-simulation routes, "
+        "which run TRIBE on a background worker)"
+    )
     yield
 
 
@@ -66,8 +103,9 @@ app = FastAPI(
     title="NeuroSplit Visualization API",
     version="0.2.0",
     description=(
-        "Read-only access to completed TRIBE v2 inference runs for cortical "
-        "visualization. Serves predicted cortical responses, never live inference."
+        "Access to completed TRIBE v2 inference runs for cortical visualization, "
+        "goal-conditioned scoring and optimization. Read-only except the Phase 8 "
+        "re-simulation routes, which queue inference on a background worker."
     ),
     lifespan=_lifespan,
 )
@@ -110,6 +148,22 @@ def scoring_loader_dep() -> ScoringLoader:
 
 
 Scoring = Annotated[ScoringLoader, Depends(scoring_loader_dep)]
+
+
+def optimization_loader_dep() -> OptimizationLoader:
+    loader = get_loader()
+    return OptimizationLoader(loader.settings.artifact_dir)
+
+
+Optimization = Annotated[OptimizationLoader, Depends(optimization_loader_dep)]
+
+
+def resimulation_loader_dep() -> ResimulationLoader:
+    loader = get_loader()
+    return get_resimulation_loader(loader.settings.artifact_dir, settings=loader.settings)
+
+
+Resimulation = Annotated[ResimulationLoader, Depends(resimulation_loader_dep)]
 
 
 class CreateComparisonRequest(BaseModel):
@@ -162,7 +216,18 @@ def _resolve(run_id: str, action: str, call: object) -> object:
 
 @app.get("/api/health")
 def health() -> dict[str, object]:
-    return {"status": "ok", "service": "neurosplit-visualization", "runs_inference": False}
+    """Health, and an honest statement of what this process is able to do.
+
+    `runs_inference` reports a capability, not current activity: the Phase 8
+    routes can start a TRIBE pass on a background worker. Every other route
+    reads files.
+    """
+    return {
+        "status": "ok",
+        "service": "neurosplit-visualization",
+        "runs_inference": True,
+        "inference_scope": "phase8_resimulation_only",
+    }
 
 
 @app.get("/api/runs", response_model=list[RunListItem])
@@ -547,3 +612,423 @@ def get_explanation(
     if explanation is None:
         raise HTTPException(status_code=404, detail="no explanation stored for this score")
     return explanation
+
+
+# ---------------------------------------------------------------------------
+# Phase 7 - optimization agent
+# ---------------------------------------------------------------------------
+
+
+class CreateOptimizationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+    request: OptimizationRequest
+    #: variant id -> run id, when a variant was scored under a different label.
+    variant_runs: dict[str, RequestRunId] | None = None
+
+
+class ReviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+    review: RecommendationReview
+
+
+class CandidateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+    proposed_variant_id: RequestRunId
+
+
+@app.post("/api/experiments/{experiment_id}/optimize", status_code=201)
+def create_optimization(
+    experiment_id: RunId, body: CreateOptimizationRequest, optimization: Optimization
+) -> OptimizationResult:
+    """Produce candidate interventions. Never edits media, never runs TRIBE."""
+    if body.request.experiment_id != experiment_id:
+        raise HTTPException(
+            status_code=422, detail="request experiment_id must match the path"
+        )
+    try:
+        return optimization.create(body.request, variant_runs=body.variant_runs)
+    except OptimizationLoadError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/api/experiments/{experiment_id}/optimization")
+def list_optimizations(experiment_id: RunId, optimization: Optimization) -> list[str]:
+    return optimization.keys(experiment_id)
+
+
+@app.get("/api/experiments/{experiment_id}/optimization/{key}")
+def get_optimization(
+    experiment_id: RunId, key: str, optimization: Optimization
+) -> OptimizationResult:
+    try:
+        return optimization.read(experiment_id, key)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(status_code=404, detail="optimization not found") from exc
+
+
+@app.get("/api/experiments/{experiment_id}/optimization/{key}/reviews")
+def list_reviews(
+    experiment_id: RunId, key: str, optimization: Optimization
+) -> list[RecommendationReview]:
+    try:
+        return optimization.reviews(experiment_id, key)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/api/experiments/{experiment_id}/optimization/{key}/reviews", status_code=201)
+def record_review(
+    experiment_id: RunId, key: str, body: ReviewRequest, optimization: Optimization
+) -> list[RecommendationReview]:
+    """Approve, modify or reject one recommendation. Required before a candidate."""
+    try:
+        return optimization.review(experiment_id, key, body.review)
+    except OptimizationLoadError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(status_code=404, detail="optimization not found") from exc
+
+
+@app.post("/api/experiments/{experiment_id}/optimization/{key}/candidate-specs", status_code=201)
+def create_candidate(
+    experiment_id: RunId, key: str, body: CandidateRequest, optimization: Optimization
+) -> ProposedVariantSpec:
+    """Turn approved reviews into a Phase 8 specification. Runs no simulation."""
+    try:
+        return optimization.build_candidate(experiment_id, key, body.proposed_variant_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(status_code=404, detail="optimization not found") from exc
+
+
+@app.get("/api/experiments/{experiment_id}/optimization/{key}/candidate-specs")
+def list_candidates(
+    experiment_id: RunId, key: str, optimization: Optimization
+) -> list[ProposedVariantSpec]:
+    try:
+        return optimization.specs(experiment_id, key)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+# ---------------------------------------------------------------------------
+# Phase 8 - bounded re-simulation
+#
+# The only routes in this API that can reach a model. A start returns as soon
+# as the run is durable; the pipeline behind it runs on a background worker and
+# is observed by polling, because a full pass takes hours.
+# ---------------------------------------------------------------------------
+
+
+class CreateResimulationRequest(BaseModel):
+    """What a person actually knows, as opposed to what the schema demands.
+
+    The objective set, its hashes, the per-hypothesis direction map and the
+    content hashes are all derived from stored Phase 6 and Phase 7 records. A
+    client cannot supply them, which is deliberate: supplying them by hand is
+    how a re-simulation ends up measuring an objective nobody approved.
+    """
+
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+    resimulation_id: RequestRunId
+    optimization_request_key: str = Field(pattern=r"^[0-9a-f]{8,64}$")
+    proposed_variant_id: RequestRunId
+    #: Absolute path to the variant the human built. Media is never uploaded
+    #: or copied; Phase 8 reads it where it lies and records its hash.
+    variant_media_path: str = Field(min_length=1)
+    source_media_path: str | None = None
+    adapter_id: str = Field(default="user-supplied", min_length=1, max_length=64)
+    parameters: dict[str, float | int | str | bool | None] = Field(default_factory=dict)
+    max_attempts: int = Field(default=3, ge=1, le=20)
+    outcome_tolerance: float = Field(default=1e-9, ge=0)
+
+    @field_validator("resimulation_id", "proposed_variant_id")
+    @classmethod
+    def _reject_dot_ids(cls, value: str) -> str:
+        if value in {".", ".."}:
+            raise ValueError("ids cannot be dot path components")
+        return value
+
+
+class StopResimulationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: Literal["cancelled", "timeout", "resource_limit"] = "cancelled"
+
+
+class ResimulationView(BaseModel):
+    """A durable state plus the two facts that are not in it.
+
+    `worker_alive` is derived from the run's lock at read time and never
+    persisted. A run whose worker was killed still says `active` in its own
+    file, because the process that would have recorded the failure is the one
+    that died; without this field there is no way to tell that from progress.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    state: ResimulationResult
+    worker_alive: bool
+    worker_error: str | None = None
+
+
+def _view(loader: ResimulationLoader, state: ResimulationResult) -> ResimulationView:
+    resimulation_id = state.request.resimulation_id
+    return ResimulationView(
+        state=state,
+        worker_alive=loader.worker_alive(resimulation_id),
+        worker_error=loader.failure(resimulation_id),
+    )
+
+
+@app.post("/api/experiments/{experiment_id}/resimulations", status_code=201)
+def create_resimulation(
+    experiment_id: RunId, body: CreateResimulationRequest, resimulation: Resimulation
+) -> ResimulationView:
+    """Bind an approved candidate to real media and queue one measured pass."""
+    try:
+        request = resimulation.build(
+            resimulation_id=body.resimulation_id,
+            experiment_id=experiment_id,
+            optimization_request_key=body.optimization_request_key,
+            proposed_variant_id=body.proposed_variant_id,
+            variant_media=FilePath(body.variant_media_path),
+            source_media=(
+                FilePath(body.source_media_path) if body.source_media_path else None
+            ),
+            adapter_id=body.adapter_id,
+            parameters=dict(body.parameters),
+            max_attempts=body.max_attempts,
+            outcome_tolerance=body.outcome_tolerance,
+        )
+        state = resimulation.create(request)
+    except ResimulationConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except RequestBuildError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ResimulationLoadError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _view(resimulation, state)
+
+
+@app.get("/api/resimulations")
+def list_resimulations(
+    resimulation: Resimulation,
+    experiment_id: Annotated[str | None, Query(pattern=_ID_PATTERN)] = None,
+) -> list[ResimulationView]:
+    return [_view(resimulation, state) for state in resimulation.list(experiment_id)]
+
+
+@app.get("/api/resimulations/{resimulation_id}")
+def get_resimulation(resimulation_id: RunId, resimulation: Resimulation) -> ResimulationView:
+    try:
+        return _view(resimulation, resimulation.get(resimulation_id))
+    except OSError as exc:
+        raise HTTPException(status_code=404, detail="re-simulation not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/api/resimulations/{resimulation_id}/resume")
+def resume_resimulation(resimulation_id: RunId, resimulation: Resimulation) -> ResimulationView:
+    """Verify every upstream hash and continue after the last durable stage."""
+    try:
+        state = resimulation.resume(resimulation_id)
+    except ResimulationConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ResimulationLoadError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(status_code=404, detail="re-simulation not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _view(resimulation, state)
+
+
+@app.post("/api/resimulations/{resimulation_id}/stop")
+def stop_resimulation(
+    resimulation_id: RunId, body: StopResimulationRequest, resimulation: Resimulation
+) -> ResimulationView:
+    """Record a stop the worker observes between stages, not a kill."""
+    try:
+        state = resimulation.stop(resimulation_id, StopReason(body.reason))
+    except OSError as exc:
+        raise HTTPException(status_code=404, detail="re-simulation not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _view(resimulation, state)
+
+
+# ---------------------------------------------------------------------------
+# Phase 9 - automated search
+#
+# Read-only except the control routes. Starting a search queues Phase 8
+# evaluations on a background worker; a six-candidate search is most of a
+# working day, so nothing here waits for one.
+# ---------------------------------------------------------------------------
+
+
+def search_loader_dep() -> SearchLoader:
+    loader = get_loader()
+    return get_search_loader(loader.settings.artifact_dir, settings=loader.settings)
+
+
+Search = Annotated[SearchLoader, Depends(search_loader_dep)]
+
+
+class SearchControlRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    candidate_id: RequestRunId | None = None
+
+
+def _search(search_id: str, call: object) -> object:
+    """Translate storage and control errors into precise status codes."""
+    try:
+        return call()  # type: ignore[operator]
+    except SearchLoadError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=404, detail=f"search '{search_id}' not found"
+        ) from exc
+    except OSError as exc:
+        raise HTTPException(
+            status_code=404, detail=f"search '{search_id}' is unreadable: {exc}"
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/api/search")
+def list_searches(search: Search) -> list[dict[str, object]]:
+    """Every recorded search, newest activity first."""
+    return [search.summary(search_id) for search_id in search.ids()]
+
+
+@app.get("/api/search/{search_id}")
+def get_search(search_id: RunId, search: Search) -> dict[str, object]:
+    return _search(search_id, lambda: search.summary(search_id))  # type: ignore[return-value]
+
+
+@app.get("/api/search/{search_id}/state")
+def get_search_state(search_id: RunId, search: Search) -> dict[str, object]:
+    """The full checkpoint, including the strategy's resumable state."""
+    return _search(search_id, lambda: search.state(search_id))  # type: ignore[return-value]
+
+
+@app.get("/api/search/{search_id}/best")
+def get_search_best(search_id: RunId, search: Search) -> dict[str, object]:
+    best = _search(search_id, lambda: search.best(search_id))
+    if best is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"search '{search_id}' has no eligible best candidate yet",
+        )
+    return best  # type: ignore[return-value]
+
+
+@app.get("/api/search/{search_id}/trajectory")
+def get_search_trajectory(search_id: RunId, search: Search) -> list[dict[str, object]]:
+    """Best-so-far against evaluation count, for the optimization plot."""
+    return _search(search_id, lambda: search.trajectory(search_id))  # type: ignore[return-value]
+
+
+@app.get("/api/search/{search_id}/population")
+def get_search_population(search_id: RunId, search: Search) -> list[dict[str, object]]:
+    return _search(search_id, lambda: search.population(search_id))  # type: ignore[return-value]
+
+
+@app.get("/api/search/{search_id}/budget")
+def get_search_budget(search_id: RunId, search: Search) -> dict[str, object]:
+    return _search(search_id, lambda: search.budget(search_id))  # type: ignore[return-value]
+
+
+@app.get("/api/search/{search_id}/events")
+def get_search_events(search_id: RunId, search: Search) -> list[dict[str, object]]:
+    return _search(search_id, lambda: search.events(search_id))  # type: ignore[return-value]
+
+
+@app.get("/api/search/{search_id}/results")
+def get_search_results(search_id: RunId, search: Search) -> list[dict[str, object]]:
+    """Every evaluated candidate, including failures and disqualifications."""
+    return _search(search_id, lambda: search.results(search_id))  # type: ignore[return-value]
+
+
+@app.get("/api/search/{search_id}/pareto")
+def get_search_pareto(search_id: RunId, search: Search) -> dict[str, object]:
+    front = _search(search_id, lambda: search.pareto(search_id))
+    if front is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"search '{search_id}' has no Pareto frontier; it declared a single "
+                f"objective, so there is no trade-off to describe"
+            ),
+        )
+    return front  # type: ignore[return-value]
+
+
+@app.get("/api/search/{search_id}/report")
+def get_search_report(search_id: RunId, search: Search) -> dict[str, object]:
+    report = _search(search_id, lambda: search.report(search_id))
+    if report is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"search '{search_id}' has not finished, so it has no report yet",
+        )
+    return report  # type: ignore[return-value]
+
+
+@app.post("/api/search/{search_id}/pause")
+def pause_search(search_id: RunId, search: Search) -> dict[str, object]:
+    """Hold at the next candidate boundary. The run stays resumable."""
+    return _search(search_id, lambda: search.pause(search_id))  # type: ignore[return-value]
+
+
+@app.post("/api/search/{search_id}/resume")
+def resume_search(search_id: RunId, search: Search) -> dict[str, object]:
+    return _search(search_id, lambda: search.unpause(search_id))  # type: ignore[return-value]
+
+
+@app.post("/api/search/{search_id}/stop")
+def stop_search(search_id: RunId, search: Search) -> dict[str, object]:
+    """End the search at the next candidate boundary, not mid-evaluation."""
+    return _search(search_id, lambda: search.stop(search_id))  # type: ignore[return-value]
+
+
+@app.post("/api/search/{search_id}/pin")
+def pin_candidate(
+    search_id: RunId, body: SearchControlRequest, search: Search
+) -> dict[str, object]:
+    """Force a candidate to the front of the queue (Step 72)."""
+    if body.candidate_id is None:
+        raise HTTPException(status_code=422, detail="candidate_id is required")
+    return _search(search_id, lambda: search.pin(search_id, str(body.candidate_id)))  # type: ignore[return-value]
+
+
+@app.post("/api/search/{search_id}/eliminate")
+def eliminate_candidate(
+    search_id: RunId, body: SearchControlRequest, search: Search
+) -> dict[str, object]:
+    """Refuse a candidate before it costs an evaluation."""
+    if body.candidate_id is None:
+        raise HTTPException(status_code=422, detail="candidate_id is required")
+    return _search(  # type: ignore[return-value]
+        search_id, lambda: search.eliminate(search_id, str(body.candidate_id))
+    )

@@ -77,12 +77,39 @@ class ContentStore:
                 self.metadata_path(result.run_id),
                 lambda handle: handle.write(result.model_dump_json(indent=2).encode("utf-8")),
             )
+            # Only after the manifest naming the current array is durable: a
+            # feature file is content-addressed, so re-analysing at a new
+            # version writes a new name and leaves the old one behind. Pruning
+            # before the manifest lands could delete the array a reader is
+            # still being pointed at.
+            self._prune_stale_features(result)
         except OSError as exc:
             raise ArtifactWriteError(
                 f"Could not write content analysis for {result.run_id}: {exc}"
             ) from exc
         logger.info("Wrote content analysis to %s", directory)
         return directory
+
+    def _prune_stale_features(self, result: ContentAnalysisResult) -> None:
+        """Delete feature arrays this run's manifest no longer references.
+
+        Without this a run directory accumulates one array per analysis. That
+        is not merely wasted space: the files differ in *column count* across
+        analysis versions, so a consumer that picks one by globbing rather than
+        by reading the manifest silently pairs a current feature-name list with
+        a stale matrix.
+        """
+        keep = result.arrays.path if result.arrays is not None else FEATURES_FILE
+        keep_name = Path(keep).name
+        directory = self.directory(result.run_id)
+        for path in directory.glob("features-*.npz"):
+            if path.name == keep_name:
+                continue
+            try:
+                path.unlink()
+                logger.info("Removed stale feature array %s", path.name)
+            except OSError as exc:  # pragma: no cover - best effort
+                logger.warning("Could not remove stale feature array %s: %s", path.name, exc)
 
     def read(self, run_id: str) -> ContentAnalysisResult:
         path = self.metadata_path(run_id)

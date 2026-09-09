@@ -58,6 +58,11 @@ def load_variant(
     times = np.asarray(series["times"], dtype=np.float64)
     roi = np.asarray(series["roi_timeseries"], dtype=np.float64)
     wall = np.asarray(mapping["medial_wall_mask"], dtype=bool)
+    vertex_to_region = (
+        np.asarray(mapping["vertex_to_region"], dtype=np.int64)
+        if "vertex_to_region" in mapping
+        else None
+    )
     responses = np.load(root / "predictions.npy", allow_pickle=False)
 
     if responses.ndim != 2 or times.ndim != 1 or roi.ndim != 2:
@@ -99,6 +104,7 @@ def load_variant(
         roi_timeseries=roi,
         region_names=tuple(region["name"] for region in regions),
         medial_wall_mask=wall,
+        vertex_to_region=vertex_to_region,
         duration_seconds=float(manifest["stimulus"]["duration_seconds"]),
         hemisphere_ranges={
             name: (int(bounds[0]), int(bounds[1]))

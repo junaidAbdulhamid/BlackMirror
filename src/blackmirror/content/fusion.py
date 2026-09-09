@@ -33,12 +33,14 @@ import numpy as np
 
 from blackmirror.content.audio.signals import AudioSignals
 from blackmirror.content.schemas import (
+    AnalysisSource,
     AudioSegment,
     AudioSegmentType,
     CallToAction,
     ContentEvent,
     ContentEventType,
     LanguageAnalysis,
+    ObjectAppearance,
     Provenance,
     SceneSegment,
     ShotSegment,
@@ -300,6 +302,121 @@ def _build_event(
         confidence=None,
         provenance=tuple(dict.fromkeys(provenance)),
     )
+
+
+#: Object queries that count as a product for PRODUCT_REVEAL. Drawn from the
+#: detector's own vocabulary, so a marker can only appear when one of these was
+#: genuinely detected.
+PRODUCT_QUERIES = frozenset(
+    {
+        "a product package",
+        "a bottle",
+        "a computer",
+        "a mobile phone",
+        "a car",
+        "a logo",
+        "a book",
+        "food",
+        "a drink",
+    }
+)
+
+#: A product must hold the screen at least this long to count as a reveal
+#: rather than a passing frame.
+MIN_REVEAL_SECONDS = 0.5
+
+
+def structural_events(
+    *,
+    duration: float,
+    scenes: list[SceneSegment],
+    objects: list[ObjectAppearance] | None = None,
+) -> tuple[list[ContentEvent], list[str]]:
+    """Derive HOOK and PRODUCT_REVEAL markers, when the evidence supports them.
+
+    These are *additional* events, not relabelled intervals: an opening segment
+    is usually also a speech or music segment, and forcing one label onto it
+    would lose that.
+
+    Neither marker is invented. HOOK is the first measured scene, labelled a
+    positional convention because no detector for "a hook" exists.
+    PRODUCT_REVEAL is emitted only when the open-vocabulary detector actually
+    found a product-like object that persisted; a stimulus with no product
+    produces no marker rather than a guess at one.
+    """
+    events: list[ContentEvent] = []
+    warnings: list[str] = []
+
+    if scenes:
+        opening = min(scenes, key=lambda scene: scene.start_time)
+        end = min(opening.end_time, duration)
+        if end > opening.start_time:
+            identity = f"hook|{opening.start_time}|{end}"
+            events.append(
+                ContentEvent(
+                    event_id=hashlib.sha256(identity.encode()).hexdigest()[:16],
+                    event_type=ContentEventType.HOOK,
+                    start_time=round(opening.start_time, 3),
+                    end_time=round(end, 3),
+                    modalities=("visual",),
+                    visual_description=opening.description,
+                    provenance=(
+                        Provenance(
+                            source=AnalysisSource.SCENE_DETECT,
+                            model_id="first-scene",
+                            notes=(
+                                "Positional convention: the opening scene. No detector for "
+                                "a 'hook' exists; the boundary is a measured scene boundary "
+                                "and the label asserts position only, never rhetorical "
+                                "function."
+                            ),
+                        ),
+                    ),
+                )
+            )
+    else:
+        warnings.append("no scenes were detected, so no hook marker could be placed")
+
+    reveals = [
+        item
+        for item in (objects or [])
+        if item.label in PRODUCT_QUERIES
+        and (item.last_seen - item.first_seen) >= MIN_REVEAL_SECONDS
+    ]
+    if reveals:
+        first = min(reveals, key=lambda item: item.first_seen)
+        end = min(first.last_seen, duration)
+        if end > first.first_seen:
+            identity = f"reveal|{first.label}|{first.first_seen}"
+            events.append(
+                ContentEvent(
+                    event_id=hashlib.sha256(identity.encode()).hexdigest()[:16],
+                    event_type=ContentEventType.PRODUCT_REVEAL,
+                    start_time=round(first.first_seen, 3),
+                    end_time=round(end, 3),
+                    modalities=("visual",),
+                    objects=(first.label,),
+                    visual_description=f"first sustained appearance of {first.label}",
+                    provenance=(
+                        Provenance(
+                            source=AnalysisSource.OBJECT_DETECTION,
+                            model_id=first.provenance.model_id,
+                            notes=(
+                                "First appearance of a product-vocabulary object persisting "
+                                f"at least {MIN_REVEAL_SECONDS}s. The detector reports only "
+                                "what it was asked about, so this marker is bounded by that "
+                                "vocabulary."
+                            ),
+                        ),
+                    ),
+                )
+            )
+    elif objects:
+        warnings.append(
+            "no product-vocabulary object persisted long enough to mark a product reveal"
+        )
+
+    return events, warnings
 
 
 def _classify(

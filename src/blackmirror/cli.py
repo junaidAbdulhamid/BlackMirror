@@ -492,6 +492,269 @@ def compare(
     console.print_json(result.model_dump_json())
 
 
+@app.command("bind-resimulation")
+def bind_resimulation(
+    resimulation_id: Annotated[str, typer.Argument(help="Name for this measured pass.")],
+    experiment_id: Annotated[str, typer.Option("--experiment", help="Scored experiment id.")],
+    optimization_key: Annotated[str, typer.Option("--optimization", help="Phase 7 request key.")],
+    proposed_variant_id: Annotated[str, typer.Option("--candidate", help="Approved spec id.")],
+    variant_media: Annotated[
+        Path,
+        typer.Option("--media", exists=True, dir_okay=False, help="The variant you built."),
+    ],
+    source_media: Annotated[
+        Path | None,
+        typer.Option(
+            "--source",
+            exists=True,
+            dir_okay=False,
+            help="Defaults to the parent run's stimulus.",
+        ),
+    ] = None,
+    adapter_id: Annotated[str, typer.Option("--adapter")] = "user-supplied",
+    max_attempts: Annotated[int, typer.Option("--max-attempts", min=1, max=20)] = 3,
+    output: Annotated[
+        Path | None, typer.Option("--out", help="Write the request JSON here instead of stdout.")
+    ] = None,
+) -> None:
+    """Derive a valid Phase 8 request from what Phase 6 and Phase 7 already stored.
+
+    The objective set, both of its hashes, the per-hypothesis direction map and
+    the media content hashes are all read from those records rather than typed,
+    which is what keeps a re-simulation measuring the objective that was
+    actually approved.
+    """
+    from blackmirror.resimulation.request_builder import RequestBuildError, build_request
+
+    settings = _settings()
+    try:
+        request = build_request(
+            settings.artifact_dir,
+            resimulation_id=resimulation_id,
+            experiment_id=experiment_id,
+            optimization_request_key=optimization_key,
+            proposed_variant_id=proposed_variant_id,
+            variant_media=variant_media,
+            source_media=source_media,
+            adapter_id=adapter_id,
+            max_attempts=max_attempts,
+        )
+    except (RequestBuildError, BlackMirrorError, FileNotFoundError, OSError, ValueError) as exc:
+        console.print(f"[bold red]{type(exc).__name__}[/bold red]: {exc}")
+        raise typer.Exit(code=1) from exc
+    payload = request.model_dump_json(indent=2)
+    if output is not None:
+        output.write_text(payload, encoding="utf-8")
+        console.print(f"Wrote {output}")
+    else:
+        console.print_json(payload)
+
+
+@app.command("resimulate")
+def resimulate(
+    request_path: Annotated[
+        Path, typer.Argument(exists=True, dir_okay=False, help="Phase 8 request JSON.")
+    ],
+) -> None:
+    """Run or idempotently resume one approved, user-bound Phase 8 candidate.
+
+    Build the request with `bind-resimulation` first. This runs TRIBE inference
+    and the full analytics, content, scoring and comparison chain, so it takes
+    hours, not seconds.
+    """
+    from blackmirror.inference.service import InferenceService
+    from blackmirror.resimulation.backend import ExistingPipelineBackend
+    from blackmirror.resimulation.orchestrator import ResimulationOrchestrator
+    from blackmirror.resimulation.schemas import ResimulationRequest
+
+    settings = _settings()
+    try:
+        request = ResimulationRequest.model_validate_json(request_path.read_text(encoding="utf-8"))
+        backend = ExistingPipelineBackend(settings.artifact_dir, InferenceService(settings))
+        result = ResimulationOrchestrator(settings.artifact_dir, backend).start(request)
+    except (BlackMirrorError, FileNotFoundError, OSError, RuntimeError, ValueError) as exc:
+        console.print(f"[bold red]{type(exc).__name__}[/bold red]: {exc}")
+        raise typer.Exit(code=1) from exc
+    console.print_json(result.model_dump_json())
+
+
+@app.command("resume-resimulation")
+def resume_resimulation(resimulation_id: Annotated[str, typer.Argument()]) -> None:
+    """Verify all upstream hashes and resume after the last durable Phase 8 stage."""
+    from blackmirror.inference.service import InferenceService
+    from blackmirror.resimulation.backend import ExistingPipelineBackend
+    from blackmirror.resimulation.orchestrator import ResimulationOrchestrator
+
+    settings = _settings()
+    try:
+        backend = ExistingPipelineBackend(settings.artifact_dir, InferenceService(settings))
+        result = ResimulationOrchestrator(settings.artifact_dir, backend).resume(resimulation_id)
+    except (BlackMirrorError, FileNotFoundError, OSError, RuntimeError, ValueError) as exc:
+        console.print(f"[bold red]{type(exc).__name__}[/bold red]: {exc}")
+        raise typer.Exit(code=1) from exc
+    console.print_json(result.model_dump_json())
+
+
+@app.command("stop-resimulation")
+def stop_resimulation(
+    resimulation_id: Annotated[str, typer.Argument()],
+    reason: Annotated[str, typer.Option("--reason")] = "cancelled",
+) -> None:
+    """Ask a running pass to stop at its next stage boundary.
+
+    This is a durable request, not a kill. The worker checks for it between
+    stages so that a partially written artifact is never left behind, which
+    means a stop takes effect when the current stage finishes.
+    """
+    from blackmirror.resimulation.schemas import StopReason
+    from blackmirror.resimulation.storage import ResimulationStore
+
+    settings = _settings()
+    try:
+        stop_reason = StopReason(reason)
+        if stop_reason not in {
+            StopReason.CANCELLED,
+            StopReason.TIMEOUT,
+            StopReason.RESOURCE_LIMIT,
+        }:
+            raise ValueError(
+                "stop reason must be one of: cancelled, timeout, resource_limit"
+            )
+        store = ResimulationStore(settings.artifact_dir)
+        current = store.read(resimulation_id)
+        if current.status.value == "completed":
+            raise ValueError("a completed resimulation cannot be stopped retroactively")
+        store.request_stop(resimulation_id, stop_reason)
+    except (BlackMirrorError, FileNotFoundError, OSError, ValueError) as exc:
+        console.print(f"[bold red]{type(exc).__name__}[/bold red]: {exc}")
+        raise typer.Exit(code=1) from exc
+    console.print(
+        f"Stop requested for {resimulation_id!r}; it takes effect at the next stage boundary."
+    )
+
+
+@app.command("list-resimulations")
+def list_resimulations(
+    experiment_id: Annotated[str | None, typer.Option("--experiment")] = None,
+) -> None:
+    """Show every recorded pass, its stage, and its measured outcome."""
+    from blackmirror.api.resimulation_loader import ResimulationLoader
+
+    settings = _settings()
+    states = ResimulationLoader(settings.artifact_dir).list(experiment_id)
+    if not states:
+        console.print("No re-simulations recorded.")
+        return
+    table = Table(title="Phase 8 re-simulations")
+    for column in ("id", "experiment", "stage", "status", "outcome"):
+        table.add_column(column)
+    for state in states:
+        outcomes = ", ".join(
+            f"{delta.objective_id}:{delta.outcome.value}" for delta in state.objective_deltas
+        )
+        table.add_row(
+            state.request.resimulation_id,
+            state.request.experiment_id,
+            state.current_stage.name,
+            state.status.value,
+            outcomes or "not measured",
+        )
+    console.print(table)
+
+
+@app.command("list-searches")
+def list_searches() -> None:
+    """Show every recorded Phase 9 search and what it observed."""
+    from blackmirror.api.search_loader import SearchLoader
+
+    settings = _settings()
+    loader = SearchLoader(settings.artifact_dir)
+    ids = loader.ids()
+    if not ids:
+        console.print("No searches recorded.")
+        return
+    table = Table(title="Phase 9 searches")
+    for column in ("id", "strategy", "status", "best", "improvement", "evals"):
+        table.add_column(column)
+    for search_id in ids:
+        summary = loader.summary(search_id)
+        raw_metrics = summary.get("metrics")
+        metrics: dict[str, object] = raw_metrics if isinstance(raw_metrics, dict) else {}
+        best = metrics.get("best_fitness")
+        gain = metrics.get("absolute_improvement")
+        resolvable = metrics.get("improvement_is_resolvable")
+        # A gain inside the noise floor is marked, not printed as if it counted.
+        gain_text = "—" if not isinstance(gain, int | float) else f"{gain:+.4f}"
+        if isinstance(gain, int | float) and resolvable is False:
+            gain_text += " (inside noise)"
+        table.add_row(
+            search_id,
+            str(summary.get("strategy") or "—"),
+            "running" if summary.get("running") else str(summary.get("status") or "—"),
+            "—" if not isinstance(best, int | float) else f"{best:.4f}",
+            gain_text,
+            str(metrics.get("evaluations", 0)),
+        )
+    console.print(table)
+
+
+@app.command("search-report")
+def search_report(
+    search_id: Annotated[str, typer.Argument(help="Search id.")],
+) -> None:
+    """Print a finished search's report, including what it does not establish."""
+    from blackmirror.api.search_loader import SearchLoader
+
+    settings = _settings()
+    loader = SearchLoader(settings.artifact_dir)
+    try:
+        report = loader.report(search_id)
+    except (OSError, ValueError) as exc:
+        console.print(f"[bold red]{type(exc).__name__}[/bold red]: {exc}")
+        raise typer.Exit(code=1) from exc
+    if report is None:
+        console.print(
+            f"[yellow]Search {search_id!r} has not finished, so it has no report "
+            f"yet.[/yellow]"
+        )
+        raise typer.Exit(code=1)
+    console.print_json(json.dumps(report, default=str))
+
+
+@app.command("search-trajectory")
+def search_trajectory(
+    search_id: Annotated[str, typer.Argument(help="Search id.")],
+) -> None:
+    """Show best-so-far against evaluation count, the sample-efficiency curve."""
+    from blackmirror.api.search_loader import SearchLoader
+
+    settings = _settings()
+    loader = SearchLoader(settings.artifact_dir)
+    try:
+        points = loader.trajectory(search_id)
+    except (OSError, ValueError) as exc:
+        console.print(f"[bold red]{type(exc).__name__}[/bold red]: {exc}")
+        raise typer.Exit(code=1) from exc
+    if not points:
+        console.print("Nothing evaluated yet.")
+        return
+    table = Table(title=f"Trajectory — {search_id}")
+    for column in ("eval", "gen", "candidate", "fitness", "best so far", ""):
+        table.add_column(column)
+    for point in points:
+        fitness = point.get("fitness")
+        best_so_far = point.get("best_fitness")
+        table.add_row(
+            str(point.get("evaluation_number")),
+            str(point.get("generation")),
+            str(point.get("candidate_id")),
+            "—" if not isinstance(fitness, int | float) else f"{fitness:.4f}",
+            "—" if not isinstance(best_so_far, int | float) else f"{best_so_far:.4f}",
+            "new best" if point.get("is_new_best") else "",
+        )
+    console.print(table)
+
+
 @app.command("export-mesh")
 def export_mesh(
     space: Annotated[str, typer.Option("--space", help="Surface template.")] = "fsaverage5",

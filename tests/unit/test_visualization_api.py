@@ -205,8 +205,16 @@ def client(tmp_path: Path, predictions: np.ndarray) -> TestClient:
 # --- Metadata -------------------------------------------------------------
 
 
-def test_health_states_that_no_inference_runs() -> None:
-    assert TestClient(app).get("/api/health").json()["runs_inference"] is False
+def test_health_scopes_inference_to_phase8_only() -> None:
+    """Phase 8 made the blanket "no inference" claim false, so it states the scope.
+
+    The claim matters: it is what tells an operator that this process can start
+    a multi-hour TRIBE pass, and exactly which routes can do it.
+    """
+    body = TestClient(app).get("/api/health").json()
+
+    assert body["runs_inference"] is True
+    assert body["inference_scope"] == "phase8_resimulation_only"
 
 
 def test_run_summary_serializes_the_contract(client: TestClient) -> None:

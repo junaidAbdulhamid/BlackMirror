@@ -157,6 +157,32 @@ with atlas surface coordinates required to equal this project's mesh exactly.
 Verified on the two real runs: all seven networks resolve and both variants
 report the same mapping checksum.
 
+## Regional contribution
+
+An aggregate target (whole cortex, a hemisphere, a custom vertex set) is
+decomposed into per-region shares, so a score can be traced to *where* on the
+cortex it came from as well as *when*.
+
+Shares are of the aggregate's **magnitude**, so a region contributing strongly
+in the negative direction stays visible instead of cancelling silently against a
+positive one. `vertex_counts` accompanies every region, because a large share
+from a 12-vertex region is not the same finding as a large share from a
+400-vertex one.
+
+Two cases deliberately return nothing rather than a number:
+
+- an **ROI target**, which is already one region — decomposing it restates the
+  question;
+- a **network target**, whose regions are Yeo networks — splitting those by
+  Destrieux region would mix two atlases into one meaningless number.
+
+Measured on the real 30 s run: 148 regions, shares summing to 1.0, led by
+superior temporal sulcus and middle temporal gyrus.
+
+This is contribution to a mathematical aggregate. It is not evidence that a
+region is functionally responsible for anything, and the schema says so in a
+`note` field.
+
 ## Pareto analysis
 
 A variant is dominated when another is at least as good on every objective and

@@ -35,6 +35,22 @@ export default function HomePage() {
           Completed TRIBE v2 inference runs. Each contains predicted cortical fMRI responses
           for a stimulus — model predictions, not measurements from any viewer.
         </p>
+        {/* The three screens that act on runs rather than display them, in the
+            order the work actually flows: score, propose, then measure. */}
+        <nav className="mt-5 flex flex-wrap gap-2">
+          <Link href="/scoring" className="tv-btn px-3 py-2">
+            Score objectives
+          </Link>
+          <Link href="/optimize" className="tv-btn px-3 py-2">
+            Find candidate tests
+          </Link>
+          <Link href="/resimulation" className="tv-btn px-3 py-2">
+            Re-simulate a candidate
+          </Link>
+          <Link href="/search" className="tv-btn px-3 py-2">
+            Automated search
+          </Link>
+        </nav>
 
         {error && (
           <div className="mt-8 rounded-xl border border-red-500/25 bg-red-500/[0.06] p-4">

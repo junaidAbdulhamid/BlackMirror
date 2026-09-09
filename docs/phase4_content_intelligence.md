@@ -600,6 +600,22 @@ Verified on a 44.1 kHz file: 0 windows before, 5 after. Waveforms are now
 resampled, and a tagging pass that produces nothing while every window failed
 says so at warning level.
 
+### Structural markers, added for Phase 7
+
+Two derived markers now accompany the fused timeline: `HOOK` and
+`PRODUCT_REVEAL`. Neither is invented.
+
+`HOOK` is the **first measured scene**, not an arbitrary opening duration. Its
+provenance states that no detector for "a hook" exists and that the label
+asserts position only. `PRODUCT_REVEAL` is the first appearance of an object
+from the open-vocabulary detector's product list that persists at least 0.5 s;
+a stimulus without one produces a warning rather than a marker.
+
+They live in `structural_markers`, not in `events`. `events` is validated as a
+**contiguous partition** of the stimulus so that coverage arithmetic holds, and
+a marker overlaps whatever interval it sits inside. Appending them to `events`
+was tried first and the schema rejected it, which is the invariant working.
+
 ### Abstention as a design principle
 
 Four separate subsystems now decline to answer rather than guess: CLIP settings,

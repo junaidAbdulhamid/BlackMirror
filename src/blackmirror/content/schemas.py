@@ -408,6 +408,15 @@ class ContentEventType(StrEnum):
     SILENCE = "silence"
     CTA = "cta"
     FUSED_INTERVAL = "fused_interval"
+    #: The opening segment. Positional by convention -- there is no detector
+    #: for "a hook" -- but its boundary is a measured scene boundary rather
+    #: than an arbitrary number of seconds. Emitted alongside the fused
+    #: intervals, never instead of them.
+    HOOK = "hook"
+    #: First sustained appearance of an object from the product vocabulary,
+    #: from open-vocabulary detection. Emitted only when such an object was
+    #: actually detected and persisted; absent otherwise.
+    PRODUCT_REVEAL = "product_reveal"
 
 
 class ContentEvent(_TimedInterval):
@@ -660,6 +669,12 @@ class ContentAnalysisResult(BaseModel):
     calls_to_action: tuple[CallToAction, ...] = ()
 
     events: tuple[ContentEvent, ...] = ()
+    #: Derived structural markers (HOOK, PRODUCT_REVEAL). Kept out of `events`
+    #: on purpose: `events` must remain a contiguous partition of the stimulus
+    #: for coverage arithmetic to hold, and a marker overlaps whatever interval
+    #: it sits in. A marker is an additional way to *name* a span, not another
+    #: piece of the timeline.
+    structural_markers: tuple[ContentEvent, ...] = ()
     associations: tuple[NeuralContentAssociation, ...] = ()
     correlations: tuple[FeatureCorrelation, ...] = ()
 

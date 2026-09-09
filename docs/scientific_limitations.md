@@ -91,6 +91,46 @@ Even then, a difference between variants is a difference in *predicted cortical
 response*. Whether it corresponds to any real-world outcome is an empirical
 question this system does not answer.
 
+### 6a. Measured: the pipeline is deterministic, but not insensitive
+
+Two independent runs of the same stimulus, same configuration, produced
+**bit-identical** predictions. Reproducibility is therefore not the concern.
+Sensitivity is.
+
+Re-running three variants of one 10 s clip with the text encoder pointed at
+`unsloth/Llama-3.2-3B` instead of `meta-llama/Llama-3.2-3B` — nominally the
+same weights, an implementation detail — changed the predictions materially:
+
+| variant | Pearson r between generations | max per-vertex diff | shift in whole-cortex mean |
+| --- | --- | --- | --- |
+| A_orig | 0.9733 | 0.5195 | -0.01092 |
+| B_bright | 0.9769 | 0.3099 | +0.00361 |
+| C_dark | 0.9700 | 0.5701 | -0.03241 |
+
+The spatial pattern is largely preserved (r ≈ 0.97). The scalar summary is not.
+The mean shift induced by that swap averages **0.0157**, and the differences
+*between the three variants* are 0.0117 to 0.0241. So:
+
+| comparison | between-variant effect | encoder shift | ratio |
+| --- | --- | --- | --- |
+| A_orig vs B_bright | 0.01241 | 0.01565 | 0.79x |
+| A_orig vs C_dark | 0.02413 | 0.01565 | 1.54x |
+| B_bright vs C_dark | 0.01172 | 0.01565 | 0.75x |
+
+Two of the three comparisons are smaller than the pipeline's sensitivity to a
+choice that should not matter at all, and the A/B ordering does in fact reverse
+between the two generations. The third is only 1.5x above it.
+
+**What follows from this.** A difference between variants is only interpretable
+if it exceeds the pipeline's sensitivity to nuisance choices. That floor is not
+currently estimated anywhere, and it is not zero. Until a variant's margin is
+shown to clear it, a ranking between close variants is not a result — it is
+within the noise of an implementation decision. Pin the encoder for a corpus,
+and treat a small margin as unresolved rather than as a finding.
+
+This is one nuisance variable measured on three variants of one clip. It is a
+lower bound on the pipeline's sensitivity, not a complete error budget.
+
 ## 7. Not for medical or diagnostic use
 
 BlackMirror must not be used to diagnose, screen for, or make any inference

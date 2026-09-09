@@ -339,6 +339,43 @@ class TemporalContribution(ScoringModel):
         return self
 
 
+class RegionalContribution(ScoringModel):
+    """Which regions produced an aggregate target's value.
+
+    Only meaningful for targets that span many vertices -- whole cortex, a
+    hemisphere, a custom vertex set. An ROI target is already one region, so
+    decomposing it would restate the question.
+
+    Shares are of the aggregate's *magnitude*, so a region contributing
+    strongly in the negative direction is visible rather than cancelling
+    silently against a positive one.
+    """
+
+    region_ids: tuple[int, ...]
+    region_names: tuple[str, ...]
+    #: Mean response of each region over the window, in model units.
+    values: tuple[float, ...]
+    #: Each region's share of total magnitude, summing to 1.
+    shares: tuple[float, ...]
+    #: Vertices behind each region within the target, so a large share from a
+    #: two-vertex region is not mistaken for a large effect.
+    vertex_counts: tuple[int, ...]
+    note: str = (
+        "Contribution to the aggregate metric, not evidence that a region is "
+        "functionally responsible for anything."
+    )
+
+    @model_validator(mode="after")
+    def _aligned(self) -> RegionalContribution:
+        lengths = {
+            len(self.region_ids), len(self.region_names),
+            len(self.values), len(self.shares), len(self.vertex_counts),
+        }
+        if len(lengths) != 1:
+            raise ValueError("regional contribution fields must be the same length")
+        return self
+
+
 class ObjectiveEvaluation(ScoringModel):
     """One objective, evaluated against one variant.
 
@@ -362,6 +399,7 @@ class ObjectiveEvaluation(ScoringModel):
         description="Supporting numbers: sample count, std, min, max, finite count.",
     )
     temporal_contribution: TemporalContribution | None = None
+    regional_contribution: RegionalContribution | None = None
     valid: bool = True
     warnings: tuple[str, ...] = ()
 

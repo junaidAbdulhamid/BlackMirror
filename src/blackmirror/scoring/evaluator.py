@@ -24,6 +24,7 @@ from blackmirror.scoring.metrics import MetricInput, MetricRegistry, default_reg
 from blackmirror.scoring.schemas import (
     NeuralObjective,
     ObjectiveEvaluation,
+    RegionalContribution,
     TargetResolution,
     TargetType,
     TemporalContribution,
@@ -55,6 +56,10 @@ class ScoringVariant:
     medial_wall_mask: NDArray[np.bool_]
     duration_seconds: float
     hemisphere_ranges: dict[str, tuple[int, int]]
+    #: Dense vertex -> region index, -1 off-atlas. Enables regional
+    #: decomposition of aggregate targets; optional so a caller with only ROI
+    #: objectives need not load it.
+    vertex_to_region: NDArray[np.integer] | None = None
     atlas_name: str | None = None
     atlas_version: str | None = None
     #: [time, network] Yeo aggregation, when a verified mapping was supplied.
@@ -201,6 +206,98 @@ def _describe(
     )
 
 
+def regional_contribution(
+    variant: ScoringVariant,
+    objective: NeuralObjective,
+    window_indices: NDArray[np.int64],
+) -> RegionalContribution | None:
+    """Decompose an aggregate target into per-region shares.
+
+    Returns None for an ROI target (already one region), when no vertex-to-region
+    mapping was supplied, or when nothing finite falls in the window. Silence is
+    the right answer in each case: a decomposition that restates the question or
+    rests on no data would be noise dressed as insight.
+    """
+    if objective.target.type is TargetType.ROI:
+        return None
+    mapping = variant.vertex_to_region
+    if mapping is None:
+        return None
+
+    responses = np.asarray(variant.responses, dtype=np.float64)
+    wall = np.asarray(variant.medial_wall_mask, dtype=bool)
+    selected = _target_vertex_mask(variant, objective, responses.shape[1], wall)
+    if selected is None or not selected.any():
+        return None
+
+    labels = np.asarray(mapping, dtype=np.int64)
+    block = responses[window_indices][:, selected]
+    region_of = labels[selected]
+
+    ids: list[int] = []
+    names: list[str] = []
+    values: list[float] = []
+    counts: list[int] = []
+    for region in sorted({int(r) for r in region_of if r >= 0}):
+        members = region_of == region
+        cells = block[:, members]
+        finite = cells[np.isfinite(cells)]
+        if not finite.size:
+            continue
+        ids.append(region)
+        names.append(
+            variant.region_names[region]
+            if region < len(variant.region_names)
+            else f"region {region}"
+        )
+        values.append(float(finite.mean()))
+        counts.append(int(members.sum()))
+
+    if not ids:
+        return None
+    magnitudes = np.abs(np.asarray(values, dtype=np.float64))
+    total = float(magnitudes.sum())
+    if total <= 0:
+        return None
+    shares = magnitudes / total
+    order = np.argsort(-shares)
+    return RegionalContribution(
+        region_ids=tuple(ids[i] for i in order),
+        region_names=tuple(names[i] for i in order),
+        values=tuple(round(values[i], 6) for i in order),
+        shares=tuple(round(float(shares[i]), 6) for i in order),
+        vertex_counts=tuple(counts[i] for i in order),
+    )
+
+
+def _target_vertex_mask(
+    variant: ScoringVariant,
+    objective: NeuralObjective,
+    vertex_count: int,
+    wall: NDArray[np.bool_],
+) -> NDArray[np.bool_] | None:
+    """The vertices an aggregate target selects, excluding the medial wall."""
+    target = objective.target
+    if target.type is TargetType.WHOLE_CORTEX:
+        return ~wall
+    if target.type is TargetType.HEMISPHERE and target.hemisphere:
+        bounds = variant.hemisphere_ranges.get(target.hemisphere)
+        if bounds is None:
+            return None
+        selected = np.zeros(vertex_count, dtype=bool)
+        selected[bounds[0] : bounds[1]] = True
+        return selected & ~wall
+    if target.type is TargetType.CUSTOM_VERTEX_SET and target.vertex_indices:
+        selected = np.zeros(vertex_count, dtype=bool)
+        chosen = np.asarray(target.vertex_indices, dtype=np.int64)
+        chosen = chosen[(chosen >= 0) & (chosen < vertex_count)]
+        selected[chosen] = True
+        return selected & ~wall
+    # NETWORK targets aggregate on the Yeo mapping, whose regions are the
+    # networks themselves; decomposing them by Destrieux region would mix atlases.
+    return None
+
+
 class ObjectiveEvaluator:
     """Evaluates one objective against one variant, producing a raw value."""
 
@@ -332,6 +429,7 @@ class ObjectiveEvaluator:
             objective_id=objective.objective_id,
             variant_id=variant.variant_id,
             raw_value=output.value,
+            regional_contribution=regional_contribution(variant, objective, indices),
             window=window,
             target=target,
             statistics={key: float(value) for key, value in output.statistics.items()},
